@@ -1,4 +1,4 @@
-<!-- generated from ruleset.json; hash: sha256:016677d2c3ecb183f5188ae43602974081f9930304c84e4b1fd0ffc2ef53fb1f -->
+<!-- generated from ruleset.json; hash: sha256:92b9c8003bb38d990a23d1e3ea27839709bd63564044edfe7212367fa01cb391 -->
 <!-- NEVER HAND-EDIT: regenerate with `autoclimb constitute`. -->
 
 # Repository RuleSet
@@ -17,11 +17,13 @@
     "**/.github/**",
     "**/Cargo.lock",
     "**/Cargo.toml",
-    "**/tests/**",
     ".autoclimb/**",
     ".github/workflows/ci.yml",
     ".github/workflows/integration.yml",
-    ".github/workflows/release.yml"
+    ".github/workflows/release.yml",
+    "crates/autoclimb-cli/tests/**",
+    "crates/autoclimb-lang-typescript/tests/**",
+    "crates/autoclimb-scoring/tests/**"
   ],
   "compatibility": {},
   "verifier_commands": [
@@ -36,6 +38,6 @@
     "wall_secs": 1800,
     "subprocesses": 4
   },
-  "hash": "016677d2c3ecb183f5188ae43602974081f9930304c84e4b1fd0ffc2ef53fb1f"
+  "hash": "92b9c8003bb38d990a23d1e3ea27839709bd63564044edfe7212367fa01cb391"
 }
 ```
