@@ -25,17 +25,18 @@ pub(crate) struct CodexCapture {
 
 /// Codex CLI batch runner.
 pub struct CodexRunner {
-    /// Path to the codex binary (default: "codex").
+    /// Path to the codex binary (default: `AUTOCLIMB_CODEX_BIN` or "codex").
     pub codex_bin: String,
-    /// Default model for codex.
+    /// Default model for codex (default: `AUTOCLIMB_CODEX_MODEL` or "gpt-5.3-codex").
     pub default_model: String,
 }
 
 impl Default for CodexRunner {
     fn default() -> Self {
         Self {
-            codex_bin: "codex".to_string(),
-            default_model: "gpt-5.3-codex".to_string(),
+            codex_bin: std::env::var("AUTOCLIMB_CODEX_BIN").unwrap_or_else(|_| "codex".to_string()),
+            default_model: std::env::var("AUTOCLIMB_CODEX_MODEL")
+                .unwrap_or_else(|_| "gpt-5.3-codex".to_string()),
         }
     }
 }
