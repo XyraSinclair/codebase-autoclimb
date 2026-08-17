@@ -418,7 +418,10 @@ mod tests {
         let result = apply_noise_budget(&refs, 0, 0);
         // Should be sorted: tier 1 high, tier 1 medium, tier 2 medium, tier 3 low
         assert_eq!(result[0].tier.as_u8(), 1);
-        assert_eq!(result[0].confidence, autoclimb_types::enums::Confidence::High);
+        assert_eq!(
+            result[0].confidence,
+            autoclimb_types::enums::Confidence::High
+        );
         assert_eq!(result[1].tier.as_u8(), 1);
         assert_eq!(
             result[1].confidence,

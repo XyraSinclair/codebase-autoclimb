@@ -97,8 +97,9 @@ mod tests {
         }
     }
 
-    static EMPTY_FINDINGS: std::sync::LazyLock<BTreeMap<String, autoclimb_types::finding::Finding>> =
-        std::sync::LazyLock::new(BTreeMap::new);
+    static EMPTY_FINDINGS: std::sync::LazyLock<
+        BTreeMap<String, autoclimb_types::finding::Finding>,
+    > = std::sync::LazyLock::new(BTreeMap::new);
     static EMPTY_POTENTIALS: std::sync::LazyLock<BTreeMap<String, u64>> =
         std::sync::LazyLock::new(BTreeMap::new);
     static EMPTY_DIMS: std::sync::LazyLock<

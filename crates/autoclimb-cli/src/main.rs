@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use autoclimb_config::{load_or_default, save_config};
 use autoclimb_detectors::phase::DetectorPhase;
 use autoclimb_lang_generic::builtin::all_builtin_configs;
-use autoclimb_lang_generic::plugin::{detect_project, GenericLangConfig};
+use autoclimb_lang_generic::plugin::detect_project;
 use autoclimb_lang_python::plugin::{detect_python_project, PythonPlugin};
 use autoclimb_output::{
     cli_command, colorize, format_analysis_summary, format_assessment_status, format_diff,
@@ -22,6 +22,10 @@ use autoclimb_state::persist::{load_or_create, save_state};
 use autoclimb_types::enums::Status;
 use autoclimb_types::finding::Finding;
 use autoclimb_types::registry::{detector_by_name, DETECTORS};
+
+mod scan_engine;
+
+use scan_engine::{collect_scan, ScanConfig, ScanProgress};
 
 #[derive(Parser)]
 #[command(
@@ -549,7 +553,9 @@ fn run_codex_review_batches(
         .collect();
 
     for (result, prompt) in results.iter_mut().zip(prompts.iter()) {
-        if result.status != autoclimb_review::types::BatchStatus::Success || result.payload.is_some() {
+        if result.status != autoclimb_review::types::BatchStatus::Success
+            || result.payload.is_some()
+        {
             continue;
         }
 
@@ -608,67 +614,41 @@ fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = load_or_create(&sp)?;
 
-    // Resolve language: explicit arg, or auto-detect
-    let lang_name = match args.lang {
-        Some(ref l) => l.clone(),
-        None => detect_language(&root).ok_or("could not auto-detect language — use --lang")?,
-    };
-
-    let runner = resolve_runner(&lang_name)?;
     let project_config = load_or_default(&config_path(&root));
     let effective_exclude = merge_excludes(&project_config.exclude, &args.exclude);
-    println!("  scanning {} ({})", root.display(), runner.name());
+    let report_progress = |progress| match progress {
+        ScanProgress::Started { lang } => println!("  scanning {} ({lang})", root.display()),
+        ScanProgress::FilesDiscovered(count) => println!("  found {count} files"),
+        ScanProgress::NoFiles => println!("  no files found — nothing to scan"),
+        ScanProgress::FilesClassified { production, other } => {
+            println!("  {production} production, {other} non-production");
+        }
+        ScanProgress::DependencyGraph(nodes) => println!("  dep graph: {nodes} nodes"),
+        ScanProgress::PhaseSkipped { label } => println!("  skipping {label} (slow)"),
+        ScanProgress::PhaseStarted { label } => print!("  running {label}..."),
+        ScanProgress::PhaseFinished { findings } => println!(" {findings} findings"),
+        ScanProgress::FindingsCollected(count) => println!("  total raw findings: {count}"),
+    };
+    let scan_config =
+        ScanConfig::new(&effective_exclude, args.skip_slow).with_progress(&report_progress);
+    let scan = collect_scan(&root, args.lang.as_deref(), &scan_config)?;
 
-    let files = runner.discover_files(&root, &effective_exclude);
-    println!("  found {} files", files.len());
-
-    if files.is_empty() {
-        println!("  no files found — nothing to scan");
+    if scan.files.is_empty() {
         return Ok(());
     }
 
-    let ctx = runner.build_context(&root, files, effective_exclude.clone());
-    let prod_count = ctx.production_files().len();
-    let non_prod = ctx.file_count() - prod_count;
-    println!("  {prod_count} production, {non_prod} non-production");
-
-    if let Some(ref g) = ctx.dep_graph {
-        println!("  dep graph: {} nodes", g.len());
-    }
-
-    let phases = runner.phases();
-    let mut all_findings = Vec::new();
-    let mut all_potentials: BTreeMap<String, u64> = BTreeMap::new();
-
-    for phase in &phases {
-        if args.skip_slow && phase.is_slow() {
-            println!("  skipping {} (slow)", phase.label());
-            continue;
-        }
-        print!("  running {}...", phase.label());
-        let output = phase.run(&root, &ctx)?;
-        let finding_count = output.findings.len();
-        println!(" {finding_count} findings");
-        all_findings.extend(output.findings);
-        for (k, v) in output.potentials {
-            *all_potentials.entry(k).or_insert(0) += v;
-        }
-    }
-
-    println!("  total raw findings: {}", all_findings.len());
-
     let opts = MergeOpts {
-        lang: Some(lang_name),
+        lang: Some(scan.lang),
         scan_path: None,
         force_resolve: args.force_resolve,
         exclude: effective_exclude,
-        potentials: Some(all_potentials),
+        potentials: Some(scan.potentials),
         merge_potentials: false,
         include_slow: !args.skip_slow,
         ignore: None,
     };
 
-    let diff = merge_scan(&mut state, all_findings, &opts);
+    let diff = merge_scan(&mut state, scan.findings, &opts);
     save_state(&state, &sp)?;
     let elapsed = start.elapsed();
 
@@ -689,12 +669,11 @@ fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // Dimension breakdown with deltas
     if let Some(ref dims) = state.dimension_scores {
-        let prev_dims = state.extra.get("prev_dimension_scores").and_then(|v| {
-            serde_json::from_value::<BTreeMap<String, autoclimb_types::scoring::DimensionScoreEntry>>(
-                v.clone(),
-            )
-            .ok()
-        });
+        type DimMap = BTreeMap<String, autoclimb_types::scoring::DimensionScoreEntry>;
+        let prev_dims = state
+            .extra
+            .get("prev_dimension_scores")
+            .and_then(|v| serde_json::from_value::<DimMap>(v.clone()).ok());
         println!();
         println!("{}", format_dimension_deltas(dims, prev_dims.as_ref()));
     }
@@ -1140,78 +1119,6 @@ fn run_langs() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// ── Language detection ─────────────────────────────────
-
-/// Auto-detect the project language by checking marker files.
-fn detect_language(root: &std::path::Path) -> Option<String> {
-    // Python first (custom plugin)
-    if detect_python_project(root) {
-        return Some("python".into());
-    }
-
-    // Generic plugins — first matching config wins
-    for config in all_builtin_configs() {
-        if detect_project(root, &config) {
-            return Some(config.name);
-        }
-    }
-
-    None
-}
-
-/// Language runner abstraction for scan command.
-enum LangRunner {
-    Python(PythonPlugin),
-    Generic(Box<GenericLangConfig>),
-}
-
-impl LangRunner {
-    fn name(&self) -> &str {
-        match self {
-            LangRunner::Python(_) => "python",
-            LangRunner::Generic(c) => c.name(),
-        }
-    }
-
-    fn discover_files(&self, root: &std::path::Path, exclude: &[String]) -> Vec<String> {
-        match self {
-            LangRunner::Python(p) => p.discover_files(root, exclude),
-            LangRunner::Generic(c) => c.discover_files(root, exclude),
-        }
-    }
-
-    fn build_context(
-        &self,
-        root: &std::path::Path,
-        files: Vec<String>,
-        exclusions: Vec<String>,
-    ) -> autoclimb_detectors::context::ScanContext {
-        match self {
-            LangRunner::Python(p) => p.build_context(root, files, exclusions),
-            LangRunner::Generic(c) => c.build_context(root, files, exclusions),
-        }
-    }
-
-    fn phases(&self) -> Vec<Box<dyn DetectorPhase>> {
-        match self {
-            LangRunner::Python(p) => p.phases(),
-            LangRunner::Generic(c) => c.phases(),
-        }
-    }
-}
-
-fn resolve_runner(lang: &str) -> Result<LangRunner, Box<dyn std::error::Error>> {
-    if lang == "python" {
-        return Ok(LangRunner::Python(PythonPlugin));
-    }
-    for config in all_builtin_configs() {
-        if config.name == lang {
-            return Ok(LangRunner::Generic(Box::new(config)));
-        }
-    }
-    Err(format!("unsupported language: {lang}").into())
-}
-
 // ── Review command ─────────────────────────────────────
 
 fn run_review(args: ReviewArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -1592,7 +1499,8 @@ fn apply_subjective_score_overlays(state: &mut autoclimb_types::state::StateMode
                 subjective_dimension_entry(score, configured_weight),
             );
         }
-        state.verified_strict_score = autoclimb_scoring::results::compute_health_score(verified_dims);
+        state.verified_strict_score =
+            autoclimb_scoring::results::compute_health_score(verified_dims);
     }
 }
 
@@ -2023,7 +1931,12 @@ fn run_viz(args: VizArgs) -> Result<(), Box<dyn std::error::Error>> {
         "strict": state.strict_score,
     });
 
-    autoclimb_output::visualize::generate_html_report(&state.findings, &files, &scores, &args.output)?;
+    autoclimb_output::visualize::generate_html_report(
+        &state.findings,
+        &files,
+        &scores,
+        &args.output,
+    )?;
 
     println!(
         "  {} generated: {}",

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
-use crossterm::style::{Attribute, Color, Stylize};
 use autoclimb_types::enums::{Confidence, Status};
 use autoclimb_types::finding::Finding;
 use autoclimb_types::scoring::{DimensionScoreEntry, ScanDiff, StateStats};
+use crossterm::style::{Attribute, Color, Stylize};
 
 // ── Style helpers ───────────────────────────────────────
 
