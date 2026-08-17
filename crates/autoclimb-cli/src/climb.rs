@@ -160,7 +160,15 @@ fn run_command(lane: &Path, text: &str, wall_secs: u64) -> Result<CommandResult>
     }
     let output_path = lane.join(".autoclimb-tmp/verifier-output.txt");
     let output_file = File::create(&output_path)?;
-    let mut child = Command::new(parts[0])
+    let mut command = Command::new(parts[0]);
+    for (key, _) in std::env::vars_os() {
+        // Verifiers must judge the lane, not inherit the orchestrator's own
+        // environment (AUTOCLIMB_CMD flipped an env-dependent test, 2026-08-17).
+        if key.to_string_lossy().starts_with("AUTOCLIMB_") {
+            command.env_remove(&key);
+        }
+    }
+    let mut child = command
         .args(&parts[1..])
         .current_dir(lane)
         .stdout(Stdio::from(output_file.try_clone()?))
