@@ -26,6 +26,8 @@ pub(crate) struct ClimbArgs {
     #[arg(long, default_value = "codex")] backend: String,
     #[arg(long)] dry_run: bool,
     #[arg(long)] discard_stuck: bool,
+    /// Discard a stale Planned change by id (no lane involved)
+    #[arg(long, value_name = "CHANGE_ID")] discard_planned: Option<String>,
 }
 #[rustfmt::skip]
 struct Ready { root: PathBuf, change: Change, ruleset: RuleSet }
@@ -36,6 +38,7 @@ struct CommandResult { command: String, verdict: Verdict, digest: String, output
 pub(crate) fn run(args: ClimbArgs) -> Result<()> {
     let root = git_root(&args.path)?;
     if args.discard_stuck { return discard_stuck(&root); }
+    if let Some(change_id) = args.discard_planned { return discard_planned(&root, &change_id); }
     let ledger_path = root.join(".autoclimb/events.jsonl");
     if !ledger_path.exists() { return Err("expected ledger .autoclimb/events.jsonl, actual absent".into()); }
     let mut ledger = Ledger::open(&ledger_path)?;
@@ -222,6 +225,17 @@ fn discard_stuck(root: &Path) -> Result<()> {
     lane.remove_discarding()?;
     close_lane_path(&mut ledger, &change_id, &lane_path.display().to_string(), LaneOutcome::Removed, "operator discarded stuck lane")?;
     println!("discarded {} and removed {}", change_id, lane_path.display());
+    Ok(())
+}
+
+#[rustfmt::skip]
+fn discard_planned(root: &Path, change_id: &str) -> Result<()> {
+    let mut ledger = Ledger::open(root.join(".autoclimb/events.jsonl"))?;
+    let projection = Projection::replay(&ledger)?;
+    let change = projection.changes.get(change_id).ok_or_else(|| format!("unknown change {change_id}"))?;
+    if change.status != ChangeStatus::Planned { return Err(format!("expected status Planned, actual {:?}", change.status).into()); }
+    status_reason(&mut ledger, change_id, "operator discarded stale plan")?;
+    println!("discarded planned change {change_id}");
     Ok(())
 }
 
