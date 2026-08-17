@@ -67,7 +67,9 @@ Important constraints:
 
 - `review --run-batches` is for Codex only right now.
 - Other reviewers should use `review --external-start --runner ...`.
-- `--mode trusted` mutates persisted subjective score surfaces.
+- `--mode trusted` mutates persisted subjective score surfaces; durable
+  scores require an independently verified packet hash, else they import as
+  provisional.
 - `--force-review-rerun` is only for intentional stale reruns.
 
 ## Mutating Commands
@@ -101,3 +103,17 @@ Stop and reassess if any of these happen:
 - The LLM scans vendored, generated, or archived trees as if they were live code.
 - The LLM uses `--mode trusted` without explicit approval.
 - The LLM runs `fix` or `move` without `--dry-run`.
+
+## Transaction Loop (advanced)
+
+For autonomous repository change under proof, use the transaction loop instead
+of ad-hoc edits: `explore` -> `frontier` -> `decide` -> `constitute` ->
+`climb`. See "The Transaction Loop" in `docs/USAGE.md` and DESIGN.md.
+Non-negotiables for an LLM operator:
+
+- `climb` executes ONE change per transaction and stops at Verified; landing
+  is a separate, human-reviewable git step.
+- Never edit `.autoclimb/events.jsonl` by hand; it is a hash-chained ledger
+  and the loader fails closed on tampering.
+- If `climb` refuses (stale HEAD, stale RuleSet hash, open decisions), the
+  refusal is correct: re-plan, do not force.

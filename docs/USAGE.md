@@ -153,7 +153,10 @@ Important review constraints:
 - `review --run-batches` currently supports the in-process Codex backend only.
 - Non-Codex reviewers should go through `review --external-start --runner ...`.
 - `--mode findings_only` is the safest default.
-- `--mode trusted` applies subjective assessments into the persisted score surface.
+- `--mode trusted` applies subjective assessments into the persisted score
+  surface; scores are durable only when the packet hash is independently
+  verified against the stored blind-packet hash, else they import as
+  provisional.
 - `--force-review-rerun` is only for intentionally stale contexts.
 
 If you want to hand review to another tool instead of the built-in Codex path:
@@ -190,6 +193,44 @@ instead of assuming one top-level auto-detect pass captures everything well.
 - Do not use `--mode trusted` casually.
 - Do not scan vendored or archived trees unless you mean to.
 - Do not assume `fix` or `move` are safe without `--dry-run`.
+
+## The Transaction Loop
+
+The evidence plane above (scan/status/queue) measures. The transaction loop
+*changes* the repository under proof. One full cycle:
+
+```bash
+$AUTOCLIMB explore --path "$TARGET"       # snapshot + facts -> ledger, EXPLORATION.md
+$AUTOCLIMB frontier --path "$TARGET" --offline --input .autoclimb/frontier-input.json
+$AUTOCLIMB decide --path "$TARGET" --decision <id> --branch <branch>
+$AUTOCLIMB constitute --path "$TARGET"    # ratify the RuleSet (verifiers, protected paths, budgets)
+$AUTOCLIMB climb --path "$TARGET"         # execute exactly ONE change transaction
+```
+
+What `climb` guarantees:
+
+- **Brutal preconditions.** It refuses unless: repo clean, HEAD equals the
+  planning-time snapshot, RuleSet hash equals the planning-time hash, exactly
+  one Planned change, no open decisions, no stuck lane. Any drift means the
+  plan is stale; retire it with `climb --discard-planned <change_id>` and
+  re-plan.
+- **Bounded authority.** The implementer works in a disposable git worktree
+  lane and may touch only the change's declared write set; protected paths
+  win over the write set. Violations discard the lane and print every
+  offending path.
+- **Independent verification.** The RuleSet's verifier commands run in the
+  lane by the orchestrator, not the agent; agent claims never satisfy
+  verification. First failure stops the ladder; later levels are recorded
+  Inconclusive, never claimed.
+- **Stop at Verified.** `climb` never lands. It prints the result tree hash,
+  lane path, and diff command. Landing is the operator's git step: apply the
+  lane files to main, commit, and confirm `git rev-parse "HEAD^{tree}"`
+  equals the recorded result tree. Then remove the lane worktree.
+
+Everything appends to `.autoclimb/events.jsonl`, a hash-chained single-writer
+ledger; `.autoclimb/ruleset.json` + `RULESET.md` are the tracked authority.
+Failed lanes are retained for inspection; `climb --discard-stuck` removes them
+(it refuses to discard a Verified lane).
 
 ## LLM Handoff
 
