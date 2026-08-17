@@ -108,11 +108,12 @@ Stop and reassess if any of these happen:
 
 For autonomous repository change under proof, use the transaction loop instead
 of ad-hoc edits: `explore` -> `frontier` -> `decide` -> `constitute` ->
-`climb`. See "The Transaction Loop" in `docs/USAGE.md` and DESIGN.md.
+`climb` -> `land`. See "The Transaction Loop" in `docs/USAGE.md` and DESIGN.md.
 Non-negotiables for an LLM operator:
 
-- `climb` executes ONE change per transaction and stops at Verified; landing
-  is a separate, human-reviewable git step.
+- `climb` executes ONE change per transaction and stops at Verified; `land`
+  is the separate step that fast-forwards to the verified tree, after the
+  operator has reviewed the lane diff. Push stays with the operator.
 - Never edit `.autoclimb/events.jsonl` by hand; it is a hash-chained ledger
   and the loader fails closed on tampering.
 - If `climb` refuses (stale HEAD, stale RuleSet hash, open decisions), the

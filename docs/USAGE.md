@@ -223,9 +223,12 @@ What `climb` guarantees:
   verification. First failure stops the ladder; later levels are recorded
   Inconclusive, never claimed.
 - **Stop at Verified.** `climb` never lands. It prints the result tree hash,
-  lane path, and diff command. Landing is the operator's git step: apply the
-  lane files to main, commit, and confirm `git rev-parse "HEAD^{tree}"`
-  equals the recorded result tree. Then remove the lane worktree.
+  lane path, and diff command so the operator can review `git -C <lane> diff`.
+- **Land separately.** `autoclimb land --path "$TARGET"` fast-forwards the
+  checked-out branch to a commit whose tree is exactly the recorded result
+  tree (refusing if HEAD moved since planning or the lane drifted since
+  verification), records `Landed` plus lane removal in the ledger, and
+  deletes the lane worktree. Push remains an operator step.
 
 Everything appends to `.autoclimb/events.jsonl`, a hash-chained single-writer
 ledger; `.autoclimb/ruleset.json` + `RULESET.md` are the tracked authority.

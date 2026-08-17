@@ -56,8 +56,9 @@ library, steward) is the horizon, not day one.
                                    │         enforcement → verifier ladder →
                                    │         Verification packet → re-explore
                                    ▼
-                            Verified (landing is a separate, human-visible step
-                            until the loop has earned merge authority)
+                            Verified ──▶ `land` (separate step: fast-forward to
+                            the exact verified tree; push stays human until
+                            the loop has earned merge authority)
 ```
 
 WIP limit is **one**. External-change policy is brutal at first: if HEAD, the
@@ -255,7 +256,12 @@ deltas precisely so deletion-and-exclusion gaming shows up.
    RuleSet; canonical JSON, generated Markdown, embedded hash.
 7. **`climb`** — execute exactly one change end to end; stop at Verified.
 8. **Dogfood** — run the review-import consolidation on this repo; promote
-   only the abstractions the loop actually demanded.
+   only the abstractions the loop actually demanded. Done 2026-08-17: three
+   live transactions landed (canonical importer d614cfb5; the `land`
+   subcommand 485d77e8, which landed itself; import_pipeline deletion
+   0022d129 under a scoped, later-restored test-protection carve-out).
+9. **`land`** — fast-forward the checked-out branch to the recorded result
+   tree, record Landed + lane removal; refuse on HEAD or lane drift.
 
 ## 10. Non-goals
 
