@@ -25,10 +25,12 @@ use autoclimb_types::registry::{detector_by_name, DETECTORS};
 
 mod constitute;
 mod explore;
+mod frontier;
 mod scan_engine;
 
 use constitute::ConstituteArgs;
 use explore::ExploreArgs;
+use frontier::{DecideArgs, FrontierArgs};
 use scan_engine::{collect_scan, ScanConfig, ScanProgress};
 
 #[derive(Parser)]
@@ -50,6 +52,10 @@ enum Commands {
     Explore(ExploreArgs),
     /// Ratify repository authority from observation and answered decisions
     Constitute(ConstituteArgs),
+    /// Produce sparse decision packets and one proposed change
+    Frontier(FrontierArgs),
+    /// Record an answer to an open decision
+    Decide(DecideArgs),
     /// Display findings with scoping and filtering
     Show(ShowArgs),
     /// Score dashboard and project overview
@@ -591,6 +597,8 @@ fn main() {
         Commands::Scan(args) => run_scan(args),
         Commands::Explore(args) => explore::run(args),
         Commands::Constitute(args) => constitute::run(args),
+        Commands::Frontier(args) => frontier::run(args),
+        Commands::Decide(args) => frontier::run_decide(args),
         Commands::Show(args) => run_show(args),
         Commands::Status(args) => run_status(args),
         Commands::Next(args) => run_next(args),
