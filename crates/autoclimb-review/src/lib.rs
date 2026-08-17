@@ -7,7 +7,6 @@ pub mod external;
 pub mod external_session;
 pub mod feedback_contract;
 pub mod import;
-pub mod import_pipeline;
 pub mod merge;
 pub mod preflight;
 pub mod prepare;

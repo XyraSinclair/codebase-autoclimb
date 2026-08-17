@@ -6,7 +6,7 @@ use autoclimb_review::dimensions::selection::{
     parse_dimension_csv, select_dimensions, validate_dimensions,
 };
 use autoclimb_review::dimensions::DimensionRegistry;
-use autoclimb_review::import_pipeline::{import_review_results, ImportConfig};
+use autoclimb_review::import::{import_review, ImportContext};
 use autoclimb_review::trust::{hash_packet, validate_trust};
 use autoclimb_review::types::{ImportMode, Provenance, ReviewFinding, ReviewPayload, ReviewScope};
 use autoclimb_types::enums::Confidence;
@@ -201,22 +201,22 @@ fn hash_packet_different_for_different_inputs() {
     assert_ne!(h1, h2);
 }
 
-// ── Import Pipeline Tests ──────────────────────────────
+// ── Import Tests ───────────────────────────────────────
 
 #[test]
 fn import_findings_only_mode() {
     let mut state = make_empty_state();
     let payload = make_payload();
-    let config = ImportConfig {
+    let context = ImportContext {
         mode: ImportMode::FindingsOnly,
         attestation: None,
-        blind_packet_hash: None,
-        allowed_dimensions: vec![],
+        stored_blind_packet_hash: None,
+        allowed_dimensions: &[],
     };
 
-    let result = import_review_results(&mut state, &payload, &config);
+    let result = import_review(&mut state, &payload, context);
     assert!(result.trust.trusted);
-    assert!(result.findings_imported >= 1);
+    assert!(result.findings_added >= 1);
 }
 
 #[test]
@@ -224,15 +224,41 @@ fn import_trusted_internal_with_valid_hash() {
     let mut state = make_empty_state();
     let payload = make_payload();
     let hash = hash_packet(&serde_json::to_string(&payload).unwrap());
-    let config = ImportConfig {
+    let allowed_dimensions = ["naming_quality".to_string()];
+    let context = ImportContext {
         mode: ImportMode::TrustedInternal,
         attestation: None,
-        blind_packet_hash: Some(hash),
-        allowed_dimensions: vec!["naming_quality".to_string()],
+        stored_blind_packet_hash: Some(hash.as_str()),
+        allowed_dimensions: &allowed_dimensions,
     };
 
-    let result = import_review_results(&mut state, &payload, &config);
+    let result = import_review(&mut state, &payload, context);
     assert!(result.trust.trusted);
+    assert_eq!(result.assessments_imported, 1);
+}
+
+#[test]
+fn import_untrusted_manual_override_rejected() {
+    let mut state = make_empty_state();
+    let payload = make_payload();
+
+    let result = import_review(&mut state, &payload, ImportMode::ManualOverride);
+    assert!(!result.trust.trusted);
+    assert_eq!(result.findings_added, 0);
+}
+
+#[test]
+fn import_warns_when_low_score_has_no_finding() {
+    let mut state = make_empty_state();
+    let mut payload = make_payload();
+    payload.findings.clear();
+    payload.assessments.insert("naming_quality".into(), 70.0);
+
+    let result = import_review(&mut state, &payload, ImportMode::TrustedInternal);
+    assert!(result
+        .messages
+        .iter()
+        .any(|message| message.contains("Warning")));
 }
 
 #[test]
