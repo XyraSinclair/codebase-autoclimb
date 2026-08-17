@@ -23,22 +23,22 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: desloppify-linux
+            artifact_name: autoclimb-linux
           - os: macos-latest
-            artifact_name: desloppify-macos
+            artifact_name: autoclimb-macos
 
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
-        run: cargo build --release -p deslop-cli
+        run: cargo build --release -p autoclimb-cli
       - name: Stage artifact
         run: |
           mkdir -p dist
-          cp target/release/desloppify dist/desloppify
+          cp target/release/autoclimb dist/autoclimb
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/desloppify
+          path: dist/autoclimb

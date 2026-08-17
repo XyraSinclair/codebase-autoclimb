@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export AUTOCLIMB_CMD="$ROOT_DIR/scripts/autoclimb-local"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "cargo is required to run the local autoclimb checkout." >&2
+  exit 1
+fi
+
+exec cargo run --manifest-path "$ROOT_DIR/Cargo.toml" -p autoclimb-cli -- "$@"

@@ -1,0 +1,18 @@
+[package]
+name = "autoclimb-detectors"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+autoclimb-graph.workspace = true
+autoclimb-discovery.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+similar.workspace = true
+
+[dev-dependencies]
+autoclimb-state.workspace = true
+tempfile.workspace = true

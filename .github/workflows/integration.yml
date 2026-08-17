@@ -21,8 +21,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release CLI
-        run: cargo build --release -p deslop-cli
+        run: cargo build --release -p autoclimb-cli
       - name: Run workspace integration tests
         run: cargo test --workspace
       - name: Verify repo-local launcher
-        run: ./scripts/desloppify-local --help
+        run: ./scripts/autoclimb-local --help

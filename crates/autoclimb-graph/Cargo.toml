@@ -1,0 +1,9 @@
+[package]
+name = "autoclimb-graph"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true

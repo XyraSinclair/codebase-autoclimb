@@ -1,0 +1,16 @@
+[package]
+name = "autoclimb-lang-python"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+autoclimb-detectors.workspace = true
+autoclimb-graph.workspace = true
+autoclimb-discovery.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.26.0"

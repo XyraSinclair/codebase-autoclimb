@@ -1,23 +1,23 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/deslop-types",
-    "crates/deslop-discovery",
-    "crates/deslop-graph",
-    "crates/deslop-scoring",
-    "crates/deslop-state",
-    "crates/deslop-detectors",
-    "crates/deslop-lang-python",
-    "crates/deslop-config",
-    "crates/deslop-output",
-    "crates/deslop-treesitter",
-    "crates/deslop-lang-generic",
-    "crates/deslop-lang-typescript",
-    "crates/deslop-fixer",
-    "crates/deslop-review",
-    "crates/deslop-narrative",
-    "crates/deslop-plan",
-    "crates/deslop-cli",
+    "crates/autoclimb-types",
+    "crates/autoclimb-discovery",
+    "crates/autoclimb-graph",
+    "crates/autoclimb-scoring",
+    "crates/autoclimb-state",
+    "crates/autoclimb-detectors",
+    "crates/autoclimb-lang-python",
+    "crates/autoclimb-config",
+    "crates/autoclimb-output",
+    "crates/autoclimb-treesitter",
+    "crates/autoclimb-lang-generic",
+    "crates/autoclimb-lang-typescript",
+    "crates/autoclimb-fixer",
+    "crates/autoclimb-review",
+    "crates/autoclimb-narrative",
+    "crates/autoclimb-plan",
+    "crates/autoclimb-cli",
 ]
 
 [workspace.package]
@@ -39,22 +39,22 @@ tracing = "0.1"
 fs2 = "0.4"
 
 # Internal crates
-deslop-types = { path = "crates/deslop-types" }
-deslop-discovery = { path = "crates/deslop-discovery" }
-deslop-graph = { path = "crates/deslop-graph" }
-deslop-scoring = { path = "crates/deslop-scoring" }
-deslop-state = { path = "crates/deslop-state" }
-deslop-detectors = { path = "crates/deslop-detectors" }
-deslop-lang-python = { path = "crates/deslop-lang-python" }
-deslop-config = { path = "crates/deslop-config" }
-deslop-output = { path = "crates/deslop-output" }
-deslop-treesitter = { path = "crates/deslop-treesitter" }
-deslop-lang-generic = { path = "crates/deslop-lang-generic" }
-deslop-lang-typescript = { path = "crates/deslop-lang-typescript" }
-deslop-fixer = { path = "crates/deslop-fixer" }
-deslop-review = { path = "crates/deslop-review" }
-deslop-narrative = { path = "crates/deslop-narrative" }
-deslop-plan = { path = "crates/deslop-plan" }
+autoclimb-types = { path = "crates/autoclimb-types" }
+autoclimb-discovery = { path = "crates/autoclimb-discovery" }
+autoclimb-graph = { path = "crates/autoclimb-graph" }
+autoclimb-scoring = { path = "crates/autoclimb-scoring" }
+autoclimb-state = { path = "crates/autoclimb-state" }
+autoclimb-detectors = { path = "crates/autoclimb-detectors" }
+autoclimb-lang-python = { path = "crates/autoclimb-lang-python" }
+autoclimb-config = { path = "crates/autoclimb-config" }
+autoclimb-output = { path = "crates/autoclimb-output" }
+autoclimb-treesitter = { path = "crates/autoclimb-treesitter" }
+autoclimb-lang-generic = { path = "crates/autoclimb-lang-generic" }
+autoclimb-lang-typescript = { path = "crates/autoclimb-lang-typescript" }
+autoclimb-fixer = { path = "crates/autoclimb-fixer" }
+autoclimb-review = { path = "crates/autoclimb-review" }
+autoclimb-narrative = { path = "crates/autoclimb-narrative" }
+autoclimb-plan = { path = "crates/autoclimb-plan" }
 
 # Async
 tokio = { version = "1", features = ["process", "time", "sync", "rt-multi-thread", "macros", "io-util"] }

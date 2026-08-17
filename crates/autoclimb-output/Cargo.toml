@@ -1,0 +1,9 @@
+[package]
+name = "autoclimb-output"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+crossterm.workspace = true
+serde_json.workspace = true

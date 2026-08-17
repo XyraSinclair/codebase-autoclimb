@@ -1,9 +1,0 @@
-[package]
-name = "deslop-graph"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-deslop-types.workspace = true
-serde.workspace = true
-serde_json.workspace = true

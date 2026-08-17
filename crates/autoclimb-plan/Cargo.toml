@@ -1,0 +1,10 @@
+[package]
+name = "autoclimb-plan"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true

@@ -1,0 +1,31 @@
+[package]
+name = "autoclimb-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "autoclimb"
+path = "src/main.rs"
+
+[dependencies]
+autoclimb-types.workspace = true
+autoclimb-discovery.workspace = true
+autoclimb-graph.workspace = true
+autoclimb-scoring.workspace = true
+autoclimb-state.workspace = true
+autoclimb-detectors.workspace = true
+autoclimb-lang-python.workspace = true
+autoclimb-config.workspace = true
+autoclimb-output.workspace = true
+autoclimb-lang-generic.workspace = true
+autoclimb-review.workspace = true
+autoclimb-narrative.workspace = true
+autoclimb-plan.workspace = true
+tokio.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile = "3.26.0"

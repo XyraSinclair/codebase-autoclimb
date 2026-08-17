@@ -1,0 +1,12 @@
+[package]
+name = "autoclimb-discovery"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+walkdir.workspace = true
+globset.workspace = true
+
+[dev-dependencies]
+tempfile = "3.26.0"

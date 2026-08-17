@@ -1,0 +1,17 @@
+[package]
+name = "autoclimb-state"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+autoclimb-types.workspace = true
+autoclimb-scoring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+globset.workspace = true
+fs2.workspace = true
+
+[dev-dependencies]
+tempfile = "3.26.0"

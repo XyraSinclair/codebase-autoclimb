@@ -1,0 +1,13 @@
+[package]
+name = "autoclimb-types"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
