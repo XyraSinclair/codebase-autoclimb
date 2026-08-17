@@ -23,9 +23,11 @@ use autoclimb_types::enums::Status;
 use autoclimb_types::finding::Finding;
 use autoclimb_types::registry::{detector_by_name, DETECTORS};
 
+mod constitute;
 mod explore;
 mod scan_engine;
 
+use constitute::ConstituteArgs;
 use explore::ExploreArgs;
 use scan_engine::{collect_scan, ScanConfig, ScanProgress};
 
@@ -46,6 +48,8 @@ enum Commands {
     Scan(ScanArgs),
     /// Record a snapshot-bound exploration
     Explore(ExploreArgs),
+    /// Ratify repository authority from observation and answered decisions
+    Constitute(ConstituteArgs),
     /// Display findings with scoping and filtering
     Show(ShowArgs),
     /// Score dashboard and project overview
@@ -586,6 +590,7 @@ fn main() {
     let result = match cli.command {
         Commands::Scan(args) => run_scan(args),
         Commands::Explore(args) => explore::run(args),
+        Commands::Constitute(args) => constitute::run(args),
         Commands::Show(args) => run_show(args),
         Commands::Status(args) => run_status(args),
         Commands::Next(args) => run_next(args),

@@ -37,3 +37,4 @@ target/
 /.claude/skills/
 /.agents/skills/
 /skills/
+!/.autoclimb/
