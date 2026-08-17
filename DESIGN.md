@@ -4,260 +4,263 @@
 its own clarified intent. It descends from a slop scanner (a score, a queue,
 an agent loop) and refounds it as a repository transformation system: infer
 what the repository is trying to be, obtain authority for a clarified target,
-move the whole repository monotonically toward it, and leave behind stronger
+move the repository monotonically toward it, and leave behind stronger
 machinery for knowing that future changes are safe.
 
 The one-line difference from upstream: upstream optimizes a score. Autoclimb
-optimizes a **constitution** — a repository-specific, evidence-backed,
-maintainer-ratified statement of purpose, invariants, laws, and quality
-weights — and treats scores as evidence, never as the objective. Score-chasing
-is the failure mode ("cosmetically cleaner, conceptually worse") that
+optimizes against a maintainer-ratified **RuleSet** — purpose, protected
+surfaces, compatibility policy, verifier commands, risk ceiling, budget — and
+treats scores as evidence, never as the objective. Score-chasing is the
+failure mode ("cosmetically cleaner, conceptually worse") that
 conscientiousness exists to prevent.
+
+Construction order (settled after adversarial review, 2026-08-17): the missing
+primitive is not the constitution — it is the **safe change transaction**:
+
+```
+exact input tree → bounded authority → patch → independent verification
+→ exact output tree → measured delta
+```
+
+We build a one-change transaction monitor first and promote abstractions only
+after the loop has consolidated a real duplication on this very repository.
+The governance superstructure (question frontier, campaign DAG, protocol
+library, steward) is the horizon, not day one.
 
 ## 0. What "an order of magnitude more conscientious" means operationally
 
 | Slop scanner behaviour | Autoclimb behaviour |
 |---|---|
-| Emits findings | Emits **claims** with evidence, denominators, confidence, freshness |
-| One score to maximise | A constitution: hard floors, laws, and a weighted quality vector that never trades floors for elegance |
-| `next` picks the top finding | A **campaign DAG** picks a portfolio: prerequisites, unlocks, risk concentration, reviewer budget |
-| Agent "fixes it and resolves" | Every tranche carries a **proof** on a verifier ladder chosen by semantic risk class, not diff size |
-| Asks nothing / asks constantly | Asks the maintainer only at the **decision frontier**, as decision packets with a conservative default; then works under a delegation contract |
-| Forgets between sessions except state.json | Append-only **ledger** of every claim, question, answer, tranche, proof, and observation; predicted-vs-realized is measured |
-| "Cleanup" is its own justification | Every tranche points back to a constitution identifier; unlineaged cleanup is discarded |
-| Leaves the repo cleaner | Leaves the repo **enforcing** its clarified intent (compiled laws: dependency checks, CI rules, generated tests) |
+| Emits findings | Emits snapshot-bound **facts** with evidence, denominators, freshness |
+| One score to maximise | A RuleSet with hard floors that are never traded for elegance |
+| `next` picks the top finding | A **Change** with a thesis, declared write set, risk class, and predicted effects |
+| Agent "fixes it and resolves" | Every change carries **verification** on a ladder chosen by semantic risk class, not diff size |
+| Asks nothing / asks constantly | Asks the maintainer ≤2 questions, only when the answer changes the next change's authority; conservative default otherwise |
+| Forgets between sessions | Single append-only event ledger; predicted-vs-realized is measured on rescan |
+| "Cleanup" is its own justification | Every change points back to a RuleSet objective; unlineaged cleanup is discarded |
+| Trusts the agent's report | Agent claims can never satisfy verification — only orchestrator-run commands and orchestrator-computed git data count |
 
-## 1. Planes
+## 1. The transaction loop (build target)
 
 ```
                  target repository (untrusted, read-only by default)
                                    │
-   ┌───────────────────────────────┼──────────────────────────────┐
-   ▼                               ▼                              ▼
-evidence plane              history & intent plane        behaviour plane
-(detectors, tree-sitter,     (git log, reverts, docs,      (build/test/lint
- dupes, graph, scores)        issues, ADRs, owners)         runners, traces)
-   └───────────────────────────────┼──────────────────────────────┘
+                              explore  ──►  Snapshot + Facts + EXPLORATION.md
+                                   │        (denominators: seen/total/excluded)
+                              frontier ──►  ≤2 Decisions + 1 proposed Change
+                                   │
+                             constitute ──►  RuleSet (canonical JSON, hashed;
+                                   │         Markdown generated from it)
+                                climb  ──►  one Change in one disposable lane:
+                                   │         pin base → agent patch → path/write-set
+                                   │         enforcement → verifier ladder →
+                                   │         Verification packet → re-explore
                                    ▼
-                        twin: claims · invariants · contradictions · unknowns
-                                   │
-                          question frontier ── decision packets ── answers
-                                   │
-                              constitution + delegation contract
-                                   │
-                    campaign (DAG of tranches with proof obligations)
-                                   │
-        ┌───────── climb loop ─────┼────────────────────────────────┐
-        │  select tranche → lane (git worktree) → implement (agent) │
-        │  → verifier ladder → proof packet → land / discard        │
-        │  → observe (predicted vs realized) → invalidate → replan  │
-        └───────────────────────────────────────────────────────────┘
-                                   │
-                        steward (drift prevention, low cost)
+                            Verified (landing is a separate, human-visible step
+                            until the loop has earned merge authority)
 ```
 
-The **evidence plane is the inherited workspace** (`autoclimb-detectors`,
-`-treesitter`, `-graph`, `-scoring`, `-state`, `-plan`, `-review`, language
-crates). It stays as-is in role and shrinks in authority: its findings become
-claims with provenance; its score becomes one quality-vector component; its
-`plan` becomes the seed for campaign tranches.
+WIP limit is **one**. External-change policy is brutal at first: if HEAD, the
+dirty digest, or the RuleSet hash differs from what the Change pinned, `climb`
+refuses to continue. Selective invalidation comes later.
 
-Everything else is new and lives in one crate, `autoclimb-core`, plus a thin
-CLI surface. The orchestrator is deterministic Rust; agents are subprocesses
-that emit patches and claims, never exercise ambient authority.
+The inherited workspace (detectors, tree-sitter, graph, scoring, state, plan,
+review, language crates) is the **evidence plane**. It stays as-is in role and
+shrinks in authority: its findings become facts with provenance; its score
+becomes one evidence stream; its ranked queue seeds proposed changes.
 
-## 2. The IR (canonical objects)
+## 2. The IR (minimal, day one)
 
-Every object is an event-sourced entity: it has an id, provenance
-(`who`, `when`, `from_commit`), and is written as an append-only event under
-`.autoclimb/ledger/<stream>.jsonl`. Projections are rebuilt in memory on
-load; no database. Facts are separate from interpretation.
+Six objects. Each absorbs what a fatter ontology would have split out; new
+entities must displace an incumbent, not join it.
 
 ```
-Claim        { id, subject, predicate, value, evidence: [EvidenceRef],
-               confidence: 0..1, fresh_at: commit, affected_by: [PathGlob|Symbol] }
-EvidenceRef  { kind: Detector|Test|Trace|Doc|GitHistory|Human|Agent,
-               locator, denominator?: {seen, total, excluded: [(what, why)]} }
-Invariant    { id, scope, statement, severity: Floor|Law|Preference,
-               verifier: VerifierRef?, phase: Draft|Ratified|Compiled }
-Contradiction{ id, claims: [ClaimId], consequence, resolutions: [String] }
-Unknown      { id, scope, why_unknown, cheapest_probe, decision_risk: R0..R5 }
-
-Question     { id, gates: [Branch], evidence: [ClaimId], coverage,
-               why_not_inferable, recommendation, consequences: {branch → text},
-               default_if_delegated: Branch, authority: Owner, expires: Option<Date> }
-Answer       { question, chosen: Branch, by, text, compiled: [Constraint] }
-Constraint   { key: dotted.path, value, source: AnswerId | Inferred, until: Option<Date> }
-
-Constitution { purpose, non_goals, invariants: [InvariantId], laws: [InvariantId],
-               quality_vector: {dimension → weight | Floor}, compat_policy,
-               protected_surfaces: [PathGlob], delegation: Delegation }
-Delegation   { write_surfaces, merge_risk_ceiling: R0..R5, budget: {agent_minutes, usd?},
-               max_concurrent_tranches, protected_branches, escalate_on: [Condition] }
-
-Campaign     { id, mode: Stabilize|Consolidate|Refound, targets: [InvariantId],
-               forbidden_regressions: [ClaimId], tranches: [TrancheId],
-               edges: [(from, to, kind: Requires|Unlocks|Conflicts)],
-               completion: Predicate }
-Tranche      { id, thesis, protocol: ProtocolId, step, lineage: [ConstitutionRef],
-               risk_class: R0..R5, required_levels: [L0..L9], deps,
-               concepts_touched: [String], predicted: {claims_after: [Claim]},
-               status: Planned|Lane|Implementing|Verifying|Packet|Landed|Discarded }
-Proof        { tranche, base_commit, precondition_hashes, levels_run: [(Level, Verdict, EvidenceRef)],
-               behaviour_changed: [String], behaviour_preserved: [String],
-               residual_uncertainty: [String], rollback: String }
-Observation  { tranche, predicted: [Claim], realized: [Claim], deltas: [String] }
+Snapshot     { repo_id, head, tree, dirty_digest, file_universe: {seen, total,
+               excluded: [(what, why)]}, tool_versions, taken_at }
+Fact         { id, snapshot, subject, predicate, value, kind: Observation|
+               Contradiction|Unknown, evidence: [locator], denominator? }
+Decision     { id, gates: [Branch], evidence: [FactId], why_not_inferable,
+               recommendation, consequences, default_if_delegated,
+               status: Open|Answered{chosen, raw_text}|Superseded }
+RuleSet      { purpose, non_goals, allowed_paths, protected_paths,
+               compatibility, verifier_commands, risk_ceiling: R0..R5,
+               budget: {attempts, wall_secs, subprocesses}, hash }
+Change       { id, thesis, lineage: RuleSetRef, base: Snapshot, brief_hash,
+               write_set: [PathGlob], risk_class: R0..R5,
+               predicted: [Fact], status: Planned|Lane|Verifying|Verified|Discarded }
+Verification { change, base_tree, result_tree, patch_hash, ruleset_hash,
+               levels_run: [(Level, Verdict, output_digest)],
+               behaviour_changed, behaviour_preserved,
+               residual_uncertainty, realized: [Fact], rollback }
 ```
 
-Denominators are mandatory on any coverage-shaped claim: not "well tested",
-but `1138 / 1204 production symbols exercised; 3 excluded environments`.
-Unknowns stay visible; they are never silently converted into confidence.
+Notes that carry the conscientiousness:
 
-## 3. State machine
+- **Snapshot is load-bearing.** A commit id alone does not describe dirty
+  files, exclusions, tool versions, or the discovered file universe.
+- Coverage-shaped facts must declare their universe: not "well tested" but
+  `1138 / 1204 production symbols exercised; 3 excluded environments`.
+  Unknowns stay visible; they are never converted into confidence.
+- The word is **verification**, not proof. Builds and tests reduce
+  uncertainty; they do not prove semantic preservation.
+- Every agent invocation is logged as an `Attempt` event (backend, brief
+  hash, budget, exit, transcript hash, produced tree) without becoming a
+  projected entity.
 
-```
-explore ──► frontier ──► constitute ──► plan ──► climb ⟲ ──► steward
-   ▲                                              │
-   └────────────── invalidate on merge/external commit/failed prediction
-```
+Deferred until the loop demands them: Campaign (a DAG over Changes),
+Observation (post-merge monitoring), the protocol DSL, quality-vector
+weights, compiled architectural laws, multi-lane concurrency, agent roles
+beyond cartographer/implementer. Deferral is recorded here so their later
+introduction is a decision, not drift.
 
-- **explore** (read-only): build the twin. Sources: the inherited scan
-  (findings → claims), git history mining (churn, reverts, abandoned
-  migrations, scars), docs/ADRs (asserted vs. observed behaviour), build/test
-  command discovery, dependency graph, duplicated-concept inventory,
-  side-effect sites, public surface. Output: `.autoclimb/twin/` projections
-  and `EXPLORATION.md` (what we can and cannot see, with denominators).
-- **frontier**: generate candidate questions from contradictions and
-  high-`decision_risk` unknowns; keep those whose branches change the target
-  architecture or risk profile; rank by expected regret removed per
-  maintainer-minute; write `QUESTIONS.md` as decision packets. Answers are
-  written inline (human) or by an agent under delegated authority; both are
-  compiled to `Constraint`s.
-- **constitute**: compile claims + answers into `CONSTITUTION.md` (human
-  readable) and `constitution.json` (machine). Where a law can be enforced
-  mechanically, emit its verifier (dependency-direction rule, forbidden import,
-  CI check, generated test) — the finished repo enforces intent.
-- **plan**: architects (independent agent runs) propose target states in
-  Stabilize / Consolidate / Refound modes; adversaries attempt to falsify their
-  assumptions; the steward selects on the value/risk/reversibility/review-cost
-  frontier and emits a campaign DAG. Early tranches raise epistemic leverage
-  (reproducible bootstrap, fast tests, characterization tests, seams) — earned
-  autonomy: consequential transformations are only admissible in subsystems
-  that are observable, testable, and reversible.
-- **climb** (loop, WIP-limited): pick the highest-value admissible tranche;
-  open a git worktree lane pinned to a base commit; run the protocol step with
-  an agent backend; run the verifier ladder to the tranche's required level;
-  assemble the proof packet; land (commit/PR) or discard; observe predicted
-  vs. realized; invalidate affected claims; replan.
-- **steward**: the campaign machinery contracts to a cheap drift monitor
-  (compiled laws + periodic re-explore).
+## 3. Ledger and state
 
-Escalation to a human happens only on: evidence contradicting the
-constitution, a genuinely irreversible decision, unobtainable proof, budget or
-risk ceiling breach, ambiguous authority, or external invalidation.
+One append-only `events.jsonl` — a single stream, because multiple streams
+lose atomic cross-entity ordering (a crash could persist an answered decision
+without its rule patch). Projections are rebuilt in memory on load; no
+database. The loader enforces, failing closed:
+
+1. Contiguous `seq`; unique event ids; order never derived from timestamps.
+2. Schema version + payload hash + previous-event hash per line; only a torn
+   final line is recoverable, corruption elsewhere is fatal.
+3. `repo_id` matches (path and remote URL are not identifiers — this repo's
+   origin still says `desloppify.git`).
+4. Every event names an exact Snapshot whose objects exist locally.
+5. Exhaustive legal state transitions; immutable fields stay immutable
+   (change base, brief hash, write set, risk class, decision branches).
+6. Agent processes never write the ledger; the orchestrator is the single
+   writer.
+7. Unknown event kinds fail closed.
+
+Two state classes, kept separate:
+
+- **Versioned authority** — `ruleset.json` (canonical, hashed) and answered
+  decisions: tracked in git. `RULESET.md` is *generated* from the JSON with
+  an embedded hash; independent editing of both is structurally impossible.
+- **Local operational history** — `.autoclimb/events.jsonl`, lanes,
+  transcripts, packets: gitignored, machine-local, never claimed as the
+  repository's source of truth.
 
 ## 4. Risk classes and the verifier ladder
 
 ```
 R0 docs / generated metadata            L0 parse · format · generated-file consistency
 R1 local pure refactor                  L1 build · types · static analysis
-R2 cross-module internal change         L2 focused unit tests
-R3 public API / dependency change       L3 integration tests
+R2 cross-module internal change         L2 focused existing tests
+R3 public API / dependency change       L3 integration checks
 R4 persistent state / deploy / concurrency  L4 API · schema · golden-output comparison
-R5 auth / billing / privacy / destructive   L5 property · mutation · fuzz · fault injection
-                                        L6 performance and cost budgets
-                                        L7 security and custody invariants
-                                        L8 shadow · canary · data reconciliation
-                                        L9 post-merge observation
+R5 auth / billing / privacy / destructive   L5+ property/mutation/fuzz · perf budgets ·
+                                             security invariants · shadow/canary · post-merge
 ```
 
 Required levels come from risk class, not line count: a 5,000-line
-deterministic codemod is R1; a six-line authorization change is R5. Diff
-budgets are expressed in concepts, contracts, and state transitions touched.
-Verifiers are configured in the constitution (`verify.build`, `verify.test`,
-`verify.lint`, plus repo-specific commands) and are the same commands a human
-would run — no bespoke test frameworks.
+deterministic codemod is R1; a six-line authorization change is R5.
+Verifiers are the same commands a human would run, named in the RuleSet.
+Flaky checks are recorded per attempt and classified inconclusive —
+retry-until-green is not verification. Verifier surfaces (tests, CI config,
+exclusions, the orchestrator itself while dogfooding) are protected paths by
+default: an agent that can weaken the judge has not improved the code.
 
-## 5. Protocols
+## 5. Question frontier (kept sparse by construction)
 
-A universal prompt cannot safely handle everything; a library of typed,
-composable transformation protocols can approach it. Each protocol declares
-applicability, required evidence, preconditions, ordered steps with allowed
-temporary violations, proof obligations per step, rollback, cutover criteria,
-and legacy-removal criteria. Protocols are data (`protocols/*.toml`), the
-engine is generic, and agents implement one *step* at a time under the step's
-brief.
-
-First protocol, end to end: **concept consolidation** —
-inventory representations → infer current semantics → ask ≤2 consequential
-questions → define canonical representation → characterization tests →
-compatibility adapters → migrate producers/consumers → prove equivalence →
-remove legacy → install a rule preventing recurrence. It exercises nearly the
-whole architecture from the inherited duplicate-code evidence without needing
-production access.
-
-Rewrite admissibility is itself a protocol: a large rewrite is admissible only
-when externally visible behaviour is enumerable, the old system can act as an
-oracle, state is exportable/dual-runnable, consumers are known, performance is
-measurable, and rollback is real. Otherwise strangler migration.
-
-## 6. Agent backends and authority
+A question is admissible only if its answer changes the **next change's**
+allowed paths, compatibility behaviour, verifier set, risk ceiling, or
+acceptance criterion. Rank ordinally:
 
 ```
-trait AgentBackend { fn run(&self, brief: &Brief, lane: &Lane, budget: &Budget) -> Transcript }
+priority = impact(1..4) × irreversibility(1..3) × branch_divergence(1..3)
+           × uncertainty(1..3) ÷ answer_minutes(1|3|10)
 ```
 
-Backends: `codex` (subprocess `codex exec`), `claude` (subprocess `claude -p`),
-`manual` (write the brief to the lane, wait for a human/agent to complete and
-`autoclimb tranche done`). Agents receive a brief pinned to a base commit and
-return a working tree plus a claims file; the orchestrator computes the diff,
-checks precondition hashes, and runs the ladder. Agents never merge, never
-push, never touch protected surfaces; the delegation contract is enforced by
-the orchestrator, not by prompt.
+Ask only when priority ≥ 8, the question blocks the next change, and the
+answer is not inferable from ratified rules, observed behaviour, docs, or
+consistent history. At most two questions survive any frontier pass; below
+threshold, take the conservative default and record it as a delegated
+decision. Never ask "what should this repository become?"
 
-Roles (cartographer, historian, interviewer, architects, adversaries,
-implementers, verifiers, steward, observer) are briefs over the same backend
-trait, instantiated only when expected value exceeds cost. Mechanical work
-never convenes a committee.
+Answers compile without a taxonomy explosion: keep the raw text verbatim;
+propose a JSON Merge Patch against the fixed RuleSet schema; accept only
+known fields; every machine rule must trace to a presented branch or an
+explicit sentence; ambiguity leaves the decision unresolved rather than
+minting authority.
 
-## 7. Objective: lower semantic entropy
-
-Success is not a higher score. It is: fewer representations per concept, fewer
-implicit state transitions, fewer dependency directions, fewer side-effect
-origins, narrower public surfaces, better correspondence between stated and
-executed architecture, faster deterministic feedback, less context needed for
-a correct change. Each tranche maps to the concepts it contracts, separates, or
-makes explicit. The qualitative test: can a fresh maintainer or agent describe
-the system faithfully with substantially fewer concepts after the campaign?
-
-## 8. Layout
+## 6. Agents
 
 ```
-crates/autoclimb-core       IR, ledger, twin, frontier, constitution, campaign, ladder, protocols
-crates/autoclimb-agents     AgentBackend impls (codex, claude, manual)
-crates/autoclimb-cli        `autoclimb` binary — inherited commands + explore/frontier/constitute/plan/climb/steward
-crates/autoclimb-<evidence> inherited evidence plane (detectors, treesitter, graph, scoring, state, plan, review, langs)
-protocols/*.toml            transformation protocols
-docs/                       USAGE, LLM_RUNBOOK, PROTOCOLS
+trait AgentBackend { fn run(&self, brief: &Brief, lane: &Lane, budget: &Budget) -> Attempt }
 ```
 
-Target repository state lives under `<repo>/.autoclimb/`:
-`ledger/*.jsonl` (append-only), `twin/` (projections), `QUESTIONS.md`,
-`CONSTITUTION.md` + `constitution.json`, `campaign.json`, `lanes/`,
-`packets/<tranche>.md`, and the inherited `state.json`/`config.json`.
+Backends: `codex` (adapter over the inherited subprocess runner), `claude`,
+`manual`. Agents receive a brief pinned to a base snapshot, work in a
+disposable git worktree lane, and return a tree. The orchestrator computes
+the diff, enforces the write set and protected paths, runs the ladder, and
+decides. Agents never merge, never push, never touch the ledger. Repository
+content is untrusted input — nothing an agent reads may alter its authority,
+output schema, budget, or verifier commands. Hard limits on attempts, wall
+time, and subprocess count; eloquent claims are laundering, so every asserted
+path, hash, call-site count, and command result is recomputed outside the
+agent.
 
-## 9. Milestones
+## 7. First dogfood transaction
 
-1. **Rename & refound** — workspace renamed, dead upstream snapshot removed, this design landed.
-2. **IR + ledger** — `autoclimb-core` types, JSONL event store, projections, invariants enforced at load.
-3. **explore** — twin from scan + git history + docs + command discovery; `EXPLORATION.md` with denominators.
-4. **frontier + constitute** — question generation (agent), decision packets, answer compilation, `CONSTITUTION.md`, compiled verifiers for mechanically enforceable laws.
-5. **plan + climb** — campaign DAG, lanes, backends, verifier ladder, proof packets, observation, replan; concept-consolidation protocol end to end.
-6. **steward + dogfood** — run autoclimb on itself; measure predicted vs realized; publish.
+Concept consolidation is the right first transformation class; the inherited
+duplicate-code detector is the wrong trigger (it is integrated into 0/3
+language plugins and emits nothing — itself a fact the twin must record).
+The honest target is already visible in this repository:
+
+`autoclimb-review/src/import.rs` (live, 3/3 CLI call sites) vs
+`import_pipeline.rs` (competing, effectively dead implementation whose trust
+check compares the supplied packet hash to itself instead of recomputing the
+stored packet — and the live path bypasses trust entirely).
+
+The transaction: inventory both representations and all call sites → one
+question (may internally generated subjective scores become durable without
+independent packet-hash verification? conservative default: no) → define one
+canonical import API → migrate callers → verify (exact base tree, enumerated
+mode behaviour, recomputed packet hashes, existing checks unchanged, 3/3
+callers migrated, 1/2 implementations remaining, single-revert rollback) →
+remove the loser. Hard-coded in Rust; the protocol DSL waits for the second
+genuinely different protocol.
+
+## 8. Semantic entropy (the objective, stated once)
+
+Success is not a higher score. It is: fewer representations per concept,
+fewer implicit state transitions, fewer dependency directions, fewer
+side-effect origins, narrower public surfaces, better correspondence between
+stated and executed architecture, faster deterministic feedback, less context
+needed for a correct change. The qualitative test: can a fresh maintainer or
+agent describe the system faithfully with substantially fewer concepts after
+the change? Metric deltas are evidence of this, never the target — and
+file-count, public-surface, and config deltas are recorded beside scanner
+deltas precisely so deletion-and-exclusion gaming shows up.
+
+## 9. Build plan (slices ≤ ~300 lines each)
+
+1. **Run model + ledger** — Snapshot/Fact/Decision/RuleSet/Change/Verification
+   in `autoclimb-types`; single locked JSONL loader in `autoclimb-state`
+   reusing its atomic-write/locking discipline. No new crate until forced.
+2. **Scan boundary** — extract finding-collection from the CLI's `run_scan`
+   into a `ScanOutput` seam so explore can call it as a library.
+3. **`explore`** — record cleanliness, HEAD/tree/tool versions; run the scan;
+   translate findings into snapshot-bound facts; render `EXPLORATION.md`
+   with seen/total/excluded. Reject stale state rather than importing it.
+4. **Lanes** — disposable worktree creation, exact-HEAD checks,
+   write-set/protected-path diff enforcement, cleanup; adapter over the
+   inherited codex subprocess runner.
+5. **`frontier`** — compact facts + inherited queue → one cartographer
+   invocation → ≤2 typed decisions + 1 proposed change; narrative-only
+   output rejected.
+6. **`constitute`** — apply chosen branches or conservative defaults to the
+   RuleSet; canonical JSON, generated Markdown, embedded hash.
+7. **`climb`** — execute exactly one change end to end; stop at Verified.
+8. **Dogfood** — run the review-import consolidation on this repo; promote
+   only the abstractions the loop actually demanded.
 
 ## 10. Non-goals
 
-- Not a GitHub Actions framework (a thin Action/App can wrap the CLI later).
+- Not a GitHub Actions framework (a thin Action can wrap the CLI later).
 - Not a general SWE agent; agents are pluggable substrates.
 - Not a scoreboard product; the badge is inherited, not central.
-- Not a fleet/multi-repo optimizer yet (the ledger is designed so fleet learning can read it later).
+- Not a fleet/multi-repo optimizer yet; the ledger is designed so fleet
+  learning can read it later.
+- No auto-merge until the transaction loop has a track record.
