@@ -1,7 +1,4 @@
 //! Codex batch runner — executes review batches via the Codex CLI.
-//!
-//! Spawns `codex exec` subprocesses with the review prompt,
-//! captures stdout/stderr, and handles timeouts and stall detection.
 
 use std::process::Stdio;
 
@@ -10,6 +7,21 @@ use tokio::process::Command;
 
 use crate::runner::{BatchRunner, RunnerOpts};
 use crate::types::{BatchResult, BatchStatus};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CodexExit {
+    Success,
+    Timeout,
+    Stall,
+    Error(Option<i32>),
+}
+
+pub(crate) struct CodexCapture {
+    pub exit: CodexExit,
+    pub stdout: String,
+    pub stderr: String,
+    pub elapsed_secs: f64,
+}
 
 /// Codex CLI batch runner.
 pub struct CodexRunner {
@@ -28,165 +40,142 @@ impl Default for CodexRunner {
     }
 }
 
-impl BatchRunner for CodexRunner {
-    async fn execute(&self, prompt: &str, opts: &RunnerOpts) -> BatchResult {
+impl CodexRunner {
+    pub(crate) async fn execute_capture(&self, prompt: &str, opts: &RunnerOpts) -> CodexCapture {
         let model = opts.model.as_deref().unwrap_or(&self.default_model);
-
-        let mut cmd = Command::new(&self.codex_bin);
-        cmd.arg("exec")
+        let mut command = Command::new(&self.codex_bin);
+        command
+            .arg("exec")
             .arg("--full-auto")
+            .arg("--ephemeral")
             .arg("-m")
             .arg(model)
             .arg("-c")
             .arg("model_reasoning_effort=\"high\"");
-
-        // Set working directory if specified
-        if let Some(ref cwd) = opts.cwd {
-            cmd.arg("-C").arg(cwd);
+        if let Some(cwd) = &opts.cwd {
+            command.arg("-C").arg(cwd);
         }
-
-        cmd.arg(prompt);
-
-        cmd.stdout(Stdio::piped())
+        command
+            .arg(prompt)
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null());
 
-        let timeout = std::time::Duration::from_secs(opts.timeout_secs);
-        let stall_timeout = std::time::Duration::from_secs(opts.stall_kill_secs);
-
-        // Spawn the process
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                return BatchResult {
-                    index: 0,
-                    status: BatchStatus::ProcessError,
-                    payload: None,
-                    raw_output: format!("Failed to spawn codex: {e}"),
-                    elapsed_secs: 0.0,
-                };
-            }
+        let start = std::time::Instant::now();
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => return capture_error(start, format!("Failed to spawn codex: {error}")),
         };
-
-        let stdout = child.stdout.take().expect("stdout piped");
-        let stderr = child.stderr.take().expect("stderr piped");
-
+        let mut stdout = BufReader::new(child.stdout.take().expect("stdout piped")).lines();
+        let mut stderr = BufReader::new(child.stderr.take().expect("stderr piped")).lines();
         let mut stdout_lines = Vec::new();
         let mut stderr_lines = Vec::new();
-
-        let mut stdout_reader = BufReader::new(stdout).lines();
-        let mut stderr_reader = BufReader::new(stderr).lines();
-
-        let start = std::time::Instant::now();
+        let mut stdout_open = true;
+        let mut stderr_open = true;
         let mut last_output = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(opts.timeout_secs);
+        let stall = std::time::Duration::from_secs(opts.stall_kill_secs);
 
-        // Read output with timeout and stall detection
-        loop {
-            if start.elapsed() > timeout {
+        let exit = loop {
+            let forced = if start.elapsed() > timeout {
+                Some(CodexExit::Timeout)
+            } else if last_output.elapsed() > stall {
+                Some(CodexExit::Stall)
+            } else {
+                None
+            };
+            if let Some(exit) = forced {
                 let _ = child.kill().await;
-                return BatchResult {
-                    index: 0,
-                    status: BatchStatus::Timeout,
-                    payload: None,
-                    raw_output: stdout_lines.join("\n"),
-                    elapsed_secs: start.elapsed().as_secs_f64(),
-                };
+                break exit;
             }
-
-            if last_output.elapsed() > stall_timeout {
-                let _ = child.kill().await;
-                return BatchResult {
-                    index: 0,
-                    status: BatchStatus::Timeout,
-                    payload: None,
-                    raw_output: format!(
-                        "Stalled after {}s of no output\n{}",
-                        opts.stall_kill_secs,
-                        stdout_lines.join("\n")
-                    ),
-                    elapsed_secs: start.elapsed().as_secs_f64(),
+            if !stdout_open && !stderr_open {
+                break match child.wait().await {
+                    Ok(status) if status.success() => CodexExit::Success,
+                    Ok(status) => CodexExit::Error(status.code()),
+                    Err(error) => {
+                        stderr_lines.push(format!("Wait error: {error}"));
+                        CodexExit::Error(None)
+                    }
                 };
             }
 
             tokio::select! {
-                line = stdout_reader.next_line() => {
-                    match line {
-                        Ok(Some(l)) => {
-                            last_output = std::time::Instant::now();
-                            stdout_lines.push(l);
-                        }
-                        Ok(None) => break, // EOF
-                        Err(e) => {
-                            stderr_lines.push(format!("stdout read error: {e}"));
-                            break;
-                        }
-                    }
-                }
-                line = stderr_reader.next_line() => {
-                    match line {
-                        Ok(Some(l)) => {
-                            last_output = std::time::Instant::now();
-                            stderr_lines.push(l);
-                        }
-                        Ok(None) => {} // stderr EOF, continue reading stdout
-                        Err(_) => {}
-                    }
-                }
+                line = stdout.next_line(), if stdout_open => match line {
+                    Ok(Some(line)) => { last_output = std::time::Instant::now(); stdout_lines.push(line); }
+                    Ok(None) => stdout_open = false,
+                    Err(error) => { stderr_lines.push(format!("stdout read error: {error}")); stdout_open = false; }
+                },
+                line = stderr.next_line(), if stderr_open => match line {
+                    Ok(Some(line)) => { last_output = std::time::Instant::now(); stderr_lines.push(line); }
+                    Ok(None) => stderr_open = false,
+                    Err(error) => { stderr_lines.push(format!("stderr read error: {error}")); stderr_open = false; }
+                },
                 _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                    // Check if child has exited
-                    if let Ok(Some(_status)) = child.try_wait() {
-                        // Drain remaining output
-                        while let Ok(Some(l)) = stdout_reader.next_line().await {
-                            stdout_lines.push(l);
-                        }
-                        break;
+                    match child.try_wait() {
+                        Ok(Some(status)) => break if status.success() { CodexExit::Success } else { CodexExit::Error(status.code()) },
+                        Ok(None) => {}
+                        Err(error) => { stderr_lines.push(format!("Wait error: {error}")); break CodexExit::Error(None); }
                     }
                 }
-            }
-        }
-
-        // Wait for process to finish
-        let exit_status = match child.wait().await {
-            Ok(s) => s,
-            Err(e) => {
-                return BatchResult {
-                    index: 0,
-                    status: BatchStatus::ProcessError,
-                    payload: None,
-                    raw_output: format!("Wait error: {e}\n{}", stdout_lines.join("\n")),
-                    elapsed_secs: start.elapsed().as_secs_f64(),
-                };
             }
         };
 
-        let raw_output = stdout_lines.join("\n");
-
-        if !exit_status.success() {
-            return BatchResult {
-                index: 0,
-                status: BatchStatus::ProcessError,
-                payload: None,
-                raw_output: format!(
-                    "Exit code: {:?}\nstdout:\n{}\nstderr:\n{}",
-                    exit_status.code(),
-                    raw_output,
-                    stderr_lines.join("\n"),
-                ),
-                elapsed_secs: start.elapsed().as_secs_f64(),
-            };
+        while let Ok(Some(line)) = stdout.next_line().await {
+            stdout_lines.push(line);
         }
+        while let Ok(Some(line)) = stderr.next_line().await {
+            stderr_lines.push(line);
+        }
+        CodexCapture {
+            exit,
+            stdout: stdout_lines.join("\n"),
+            stderr: stderr_lines.join("\n"),
+            elapsed_secs: start.elapsed().as_secs_f64(),
+        }
+    }
+}
 
+impl BatchRunner for CodexRunner {
+    async fn execute(&self, prompt: &str, opts: &RunnerOpts) -> BatchResult {
+        let capture = self.execute_capture(prompt, opts).await;
+        let (status, raw_output) = match capture.exit {
+            CodexExit::Success => (BatchStatus::Success, capture.stdout),
+            CodexExit::Timeout => (BatchStatus::Timeout, capture.stdout),
+            CodexExit::Stall => (
+                BatchStatus::Timeout,
+                format!(
+                    "Stalled after {}s of no output\n{}",
+                    opts.stall_kill_secs, capture.stdout
+                ),
+            ),
+            CodexExit::Error(code) => (
+                BatchStatus::ProcessError,
+                format!(
+                    "Exit code: {code:?}\nstdout:\n{}\nstderr:\n{}",
+                    capture.stdout, capture.stderr
+                ),
+            ),
+        };
         BatchResult {
             index: 0,
-            status: BatchStatus::Success,
-            payload: None, // Parsing happens in result_parser
+            status,
+            payload: None,
             raw_output,
-            elapsed_secs: start.elapsed().as_secs_f64(),
+            elapsed_secs: capture.elapsed_secs,
         }
     }
 
     fn name(&self) -> &str {
         "codex"
+    }
+}
+
+fn capture_error(start: std::time::Instant, message: String) -> CodexCapture {
+    CodexCapture {
+        exit: CodexExit::Error(None),
+        stdout: String::new(),
+        stderr: message,
+        elapsed_secs: start.elapsed().as_secs_f64(),
     }
 }
 

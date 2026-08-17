@@ -1,3 +1,4 @@
+pub mod agent_backend;
 pub mod batch;
 pub mod context;
 pub mod context_signals;

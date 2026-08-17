@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use autoclimb_detectors::phase::DetectorPhase;
@@ -133,6 +133,21 @@ pub fn collect_scan(
         findings,
         potentials,
     })
+}
+
+pub(crate) fn known_source_extensions() -> BTreeSet<String> {
+    let mut extensions = BTreeSet::from(["py".to_owned()]);
+    for config in all_builtin_configs() {
+        extensions.extend(config.extensions);
+    }
+    extensions
+}
+
+pub(crate) fn language_exclusions(lang: &str) -> Vec<String> {
+    all_builtin_configs()
+        .into_iter()
+        .find(|config| config.name == lang)
+        .map_or_else(Vec::new, |config| config.exclude_patterns)
 }
 
 /// Auto-detect the project language by checking marker files.
