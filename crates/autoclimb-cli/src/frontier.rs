@@ -52,7 +52,9 @@ pub(crate) fn run(args: FrontierArgs) -> Result<()> {
     kept.sort_by(|a, b| b.priority.total_cmp(&a.priority));
     if kept.len() > 2 { dropped.extend(kept.drain(2..)); }
     let (ruleset, lineage) = projection.ruleset.as_ref().ok_or("cannot record change_planned without a ratified RuleSet; run autoclimb constitute first (ledger API gap)")?;
+    let implementer_brief = raw.proposed_change.brief_for_implementer.clone();
     let change = change(raw.proposed_change, &root, &snapshot_id, &snapshot, ruleset, lineage)?;
+    write_atomic(&root.join(".autoclimb/change-briefs").join(format!("{}.txt", change.id)), implementer_brief.as_bytes())?;
     for item in &kept { ledger.append(DECISION_OPENED, &item.decision)?; }
     ledger.append(CHANGE_PLANNED, &change)?;
     write_atomic(&root.join(".autoclimb/QUESTIONS.md"), render_questions(&kept).as_bytes())?;

@@ -23,11 +23,13 @@ use autoclimb_types::enums::Status;
 use autoclimb_types::finding::Finding;
 use autoclimb_types::registry::{detector_by_name, DETECTORS};
 
+mod climb;
 mod constitute;
 mod explore;
 mod frontier;
 mod scan_engine;
 
+use climb::ClimbArgs;
 use constitute::ConstituteArgs;
 use explore::ExploreArgs;
 use frontier::{DecideArgs, FrontierArgs};
@@ -52,6 +54,8 @@ enum Commands {
     Explore(ExploreArgs),
     /// Ratify repository authority from observation and answered decisions
     Constitute(ConstituteArgs),
+    /// Execute one bounded change transaction
+    Climb(ClimbArgs),
     /// Produce sparse decision packets and one proposed change
     Frontier(FrontierArgs),
     /// Record an answer to an open decision
@@ -597,6 +601,7 @@ fn main() {
         Commands::Scan(args) => run_scan(args),
         Commands::Explore(args) => explore::run(args),
         Commands::Constitute(args) => constitute::run(args),
+        Commands::Climb(args) => climb::run(args),
         Commands::Frontier(args) => frontier::run(args),
         Commands::Decide(args) => frontier::run_decide(args),
         Commands::Show(args) => run_show(args),
