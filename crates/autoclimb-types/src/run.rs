@@ -113,6 +113,7 @@ pub enum ChangeStatus {
     Lane,
     Verifying,
     Verified,
+    Landed,
     Discarded,
 }
 

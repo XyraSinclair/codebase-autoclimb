@@ -27,12 +27,14 @@ mod climb;
 mod constitute;
 mod explore;
 mod frontier;
+mod land;
 mod scan_engine;
 
 use climb::ClimbArgs;
 use constitute::ConstituteArgs;
 use explore::ExploreArgs;
 use frontier::{DecideArgs, FrontierArgs};
+use land::LandArgs;
 use scan_engine::{collect_scan, ScanConfig, ScanProgress};
 
 #[derive(Parser)]
@@ -56,6 +58,8 @@ enum Commands {
     Constitute(ConstituteArgs),
     /// Execute one bounded change transaction
     Climb(ClimbArgs),
+    /// Land one verified change onto the checked-out branch
+    Land(LandArgs),
     /// Produce sparse decision packets and one proposed change
     Frontier(FrontierArgs),
     /// Record an answer to an open decision
@@ -602,6 +606,7 @@ fn main() {
         Commands::Explore(args) => explore::run(args),
         Commands::Constitute(args) => constitute::run(args),
         Commands::Climb(args) => climb::run(args),
+        Commands::Land(args) => land::run(args),
         Commands::Frontier(args) => frontier::run(args),
         Commands::Decide(args) => frontier::run_decide(args),
         Commands::Show(args) => run_show(args),

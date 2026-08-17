@@ -323,8 +323,9 @@ impl Projection {
     #[rustfmt::skip]
     fn update_change(&mut self, seq: u64, update: ChangeStatusEvent) -> Result<(), LedgerError> {
         match (update.status, update.reason.as_deref()) {
-            (ChangeStatus::Discarded, Some(reason)) if !reason.is_empty() => {}
+            (ChangeStatus::Discarded | ChangeStatus::Landed, Some(reason)) if !reason.is_empty() => {}
             (ChangeStatus::Discarded, _) => return fail(seq, "discarded change status requires a reason"),
+            (ChangeStatus::Landed, _) => return fail(seq, "landed change status requires a reason"),
             (_, None) => {}
             (_, Some(_)) => return fail(seq, "non-discarded change status cannot carry a reason"),
         }
@@ -332,7 +333,8 @@ impl Projection {
         if !matches!((change.status, update.status),
             (ChangeStatus::Planned, ChangeStatus::Lane | ChangeStatus::Discarded)
             | (ChangeStatus::Lane, ChangeStatus::Verifying | ChangeStatus::Discarded)
-            | (ChangeStatus::Verifying, ChangeStatus::Verified | ChangeStatus::Discarded)) {
+            | (ChangeStatus::Verifying, ChangeStatus::Verified | ChangeStatus::Discarded)
+            | (ChangeStatus::Verified, ChangeStatus::Landed)) {
             return fail(seq, format!("illegal change transition {:?} -> {:?}", change.status, update.status));
         }
         change.status = update.status;
