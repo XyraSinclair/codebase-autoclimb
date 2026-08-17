@@ -1,4 +1,4 @@
-<!-- generated from ruleset.json; hash: sha256:98a903281e11d9a05f861d142ced229bd89076953ebaab47f547acd3234dd15f -->
+<!-- generated from ruleset.json; hash: sha256:016677d2c3ecb183f5188ae43602974081f9930304c84e4b1fd0ffc2ef53fb1f -->
 <!-- NEVER HAND-EDIT: regenerate with `autoclimb constitute`. -->
 
 # Repository RuleSet
@@ -7,7 +7,7 @@
 
 ```json
 {
-  "purpose": "UNRATIFIED: describe what this repository is for",
+  "purpose": "Autonomous, proof-carrying hill-climb of codebases toward their clarified intent; this repository is autoclimb itself — evidence plane plus change-transaction loop, dogfooding on its own source.",
   "non_goals": [],
   "allowed_paths": [
     "**"
@@ -36,6 +36,6 @@
     "wall_secs": 1800,
     "subprocesses": 4
   },
-  "hash": "98a903281e11d9a05f861d142ced229bd89076953ebaab47f547acd3234dd15f"
+  "hash": "016677d2c3ecb183f5188ae43602974081f9930304c84e4b1fd0ffc2ef53fb1f"
 }
 ```
