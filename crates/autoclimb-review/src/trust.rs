@@ -15,7 +15,7 @@ use crate::types::ImportMode;
 const REQUIRED_PHRASES: &[&str] = &["without awareness", "unbiased"];
 
 /// Result of trust validation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TrustResult {
     /// Whether the import is trusted.
     pub trusted: bool,

@@ -4,16 +4,61 @@ use std::collections::BTreeMap;
 
 use autoclimb_types::enums::{Status, Tier};
 use autoclimb_types::finding::Finding;
+use autoclimb_types::scoring::DimensionScoreEntry;
 use autoclimb_types::state::StateModel;
 
+use crate::feedback_contract;
+use crate::trust::{self, TrustResult};
 use crate::types::{ImportMode, ReviewFinding, ReviewPayload};
 
+/// Context required to validate and apply a review import.
+#[derive(Debug, Clone, Copy)]
+pub struct ImportContext<'a> {
+    pub mode: ImportMode,
+    pub attestation: Option<&'a str>,
+    pub stored_blind_packet_hash: Option<&'a str>,
+    pub allowed_dimensions: &'a [String],
+}
+
+impl<'a> From<ImportMode> for ImportContext<'a> {
+    fn from(mode: ImportMode) -> Self {
+        Self {
+            mode,
+            attestation: None,
+            stored_blind_packet_hash: None,
+            allowed_dimensions: &[],
+        }
+    }
+}
+
 /// Import a review payload into the project state.
-pub fn import_review(
+pub fn import_review<'a>(
     state: &mut StateModel,
     payload: &ReviewPayload,
-    mode: ImportMode,
+    context: impl Into<ImportContext<'a>>,
 ) -> ImportResult {
+    let context = context.into();
+    let payload_json =
+        serde_json::to_string(payload).expect("review payload serialization should be infallible");
+    let computed_hash = trust::hash_packet(&payload_json);
+    let trust = trust::validate_trust(
+        context.mode,
+        context.stored_blind_packet_hash,
+        Some(&computed_hash),
+        context.attestation,
+    );
+
+    if !trust.trusted {
+        return ImportResult {
+            trust,
+            findings_added: 0,
+            findings_updated: 0,
+            assessments_applied: false,
+            assessments_imported: 0,
+            messages: vec!["Import rejected: trust validation failed.".to_string()],
+        };
+    }
+
     let now = autoclimb_types::newtypes::Timestamp::now().0;
     let mut added = 0u32;
     let mut updated = 0u32;
@@ -36,14 +81,35 @@ pub fn import_review(
     }
 
     // Import assessments if trusted mode
-    let assessments_applied = match mode {
+    let (assessments_applied, assessments_imported) = match context.mode {
         ImportMode::TrustedInternal | ImportMode::AttestedExternal | ImportMode::ManualOverride => {
-            // Store assessments in state extra
-            let assessment_json = serde_json::to_value(&payload.assessments).unwrap_or_default();
+            let assessments = payload
+                .assessments
+                .iter()
+                .filter(|(dimension, _)| {
+                    context.allowed_dimensions.is_empty()
+                        || context.allowed_dimensions.contains(dimension)
+                })
+                .map(|(dimension, score)| (dimension.clone(), *score))
+                .collect::<BTreeMap<_, _>>();
+            let assessment_json = serde_json::to_value(&assessments).unwrap_or_default();
             state
                 .extra
                 .insert("review_assessments".into(), assessment_json);
-            for (dimension, score) in &payload.assessments {
+            let dimension_scores = state.dimension_scores.get_or_insert_default();
+            state.strict_dimension_scores.get_or_insert_default();
+            for (dimension, score) in &assessments {
+                dimension_scores.insert(
+                    dimension.clone(),
+                    DimensionScoreEntry {
+                        score: *score,
+                        tier: 0,
+                        checks: 0,
+                        issues: 0,
+                        detectors: BTreeMap::new(),
+                        extra: BTreeMap::new(),
+                    },
+                );
                 state.subjective_assessments.insert(
                     dimension.clone(),
                     serde_json::json!({
@@ -53,13 +119,14 @@ pub fn import_review(
                         "assessed_at": now.clone(),
                         "placeholder": false,
                         "provisional_override": false,
+                        "provisional": !trust.durable,
                         "integrity_penalty": serde_json::Value::Null,
                     }),
                 );
             }
-            true
+            (true, assessments.len())
         }
-        ImportMode::FindingsOnly => false,
+        ImportMode::FindingsOnly => (false, 0),
     };
 
     // Update provenance
@@ -71,19 +138,52 @@ pub fn import_review(
         .extra
         .insert("last_review_at".into(), serde_json::json!(now));
 
+    let mut messages = trust.messages.clone();
+    messages.extend(validate_feedback_contract(payload));
+    messages.push(format!(
+        "Imported {} findings, {} assessments.",
+        added, assessments_imported
+    ));
+
     ImportResult {
+        trust,
         findings_added: added,
         findings_updated: updated,
         assessments_applied,
+        assessments_imported,
+        messages,
     }
 }
 
 /// Result of importing review findings.
 #[derive(Debug, Clone)]
 pub struct ImportResult {
+    pub trust: TrustResult,
     pub findings_added: u32,
     pub findings_updated: u32,
     pub assessments_applied: bool,
+    pub assessments_imported: usize,
+    pub messages: Vec<String>,
+}
+
+fn validate_feedback_contract(payload: &ReviewPayload) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for (dimension, score) in &payload.assessments {
+        if feedback_contract::score_requires_finding(*score)
+            && !payload
+                .findings
+                .iter()
+                .any(|finding| finding.dimension == *dimension)
+        {
+            warnings.push(format!(
+                "Warning: {dimension} scored {score:.1} (< {}) but has no findings.",
+                feedback_contract::LOW_SCORE_FINDING_THRESHOLD
+            ));
+        }
+    }
+
+    warnings
 }
 
 fn review_finding_to_finding(rf: &ReviewFinding, now: &str) -> Finding {
