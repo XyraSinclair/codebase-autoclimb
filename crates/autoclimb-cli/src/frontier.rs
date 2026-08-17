@@ -52,9 +52,7 @@ pub(crate) fn run(args: FrontierArgs) -> Result<()> {
     kept.sort_by(|a, b| b.priority.total_cmp(&a.priority));
     if kept.len() > 2 { dropped.extend(kept.drain(2..)); }
     let (ruleset, lineage) = projection.ruleset.as_ref().ok_or("cannot record change_planned without a ratified RuleSet; run autoclimb constitute first (ledger API gap)")?;
-    let implementer_brief = raw.proposed_change.brief_for_implementer.clone();
     let change = change(raw.proposed_change, &root, &snapshot_id, &snapshot, ruleset, lineage)?;
-    write_atomic(&root.join(".autoclimb/change-briefs").join(format!("{}.txt", change.id)), implementer_brief.as_bytes())?;
     for item in &kept { ledger.append(DECISION_OPENED, &item.decision)?; }
     ledger.append(CHANGE_PLANNED, &change)?;
     write_atomic(&root.join(".autoclimb/QUESTIONS.md"), render_questions(&kept).as_bytes())?;
@@ -193,7 +191,8 @@ fn change(raw: RawChange, root: &Path, snapshot_id: &str, snapshot: &Snapshot, r
         id: format!("{snapshot_id}:predicted:{}", index + 1), snapshot: snapshot_id.into(), subject: id.clone(),
         predicate: "predicted_effect".into(), value: Value::String(effect), kind: FactKind::Observation, evidence: Vec::new(), denominator: None,
     }).collect();
-    Ok(Change { id, thesis: raw.thesis, lineage: lineage.into(), base: snapshot.clone(), brief_hash: sha256(raw.brief_for_implementer), write_set: raw.write_set, risk_class: risk, predicted, status: ChangeStatus::Planned })
+    let brief_hash = sha256(&raw.brief_for_implementer);
+    Ok(Change { id, thesis: raw.thesis, lineage: lineage.into(), base: snapshot.clone(), brief: raw.brief_for_implementer, brief_hash, write_set: raw.write_set, risk_class: risk, predicted, status: ChangeStatus::Planned })
 }
 
 #[rustfmt::skip]
@@ -220,7 +219,7 @@ fn render_questions(items: &[Candidate]) -> String {
         for gate in &decision.gates { writeln!(out, "- `{}`: {}", gate.id, gate.description).unwrap(); }
         writeln!(out, "\n### Evidence\n{}\n\n### Why Not Inferable\n{}\n\n### Recommendation\n{}\n\n### Consequences", decision.evidence.iter().map(|id| format!("- `{id}`")).collect::<Vec<_>>().join("\n"), decision.why_not_inferable, decision.recommendation).unwrap();
         for consequence in &decision.consequences { writeln!(out, "- {consequence}").unwrap(); }
-        writeln!(out, "\n### Conservative Default\n`{}`\n\nAnswer: \n\nAnswer by: `autoclimb decide <decision-id> --choose <branch> [--note '...']` — or edit this file's Answer: line and run `autoclimb decide --from-file`\n", decision.default_if_delegated).unwrap();
+        writeln!(out, "\n### Conservative Default\n`{}`\n\nAnswer: \n\nAnswer by: `autoclimb decide <decision-id> --choose <branch> [--note '...']`\n", decision.default_if_delegated).unwrap();
     }
     out
 }

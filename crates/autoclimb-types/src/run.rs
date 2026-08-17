@@ -123,21 +123,12 @@ pub struct Change {
     pub thesis: String,
     pub lineage: String,
     pub base: Snapshot,
+    pub brief: String,
     pub brief_hash: String,
     #[serde(default)] pub write_set: Vec<String>,
     pub risk_class: RiskClass,
     #[serde(default)] pub predicted: Vec<Fact>,
     pub status: ChangeStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum VerifyLevel {
-    L0,
-    L1,
-    L2,
-    L3,
-    L4,
-    L5Plus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,7 +139,9 @@ pub enum Verdict {
     Inconclusive,
 }
 
-pub type LevelResult = (VerifyLevel, Verdict, String);
+#[rustfmt::skip]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LevelResult { pub command: String, pub verdict: Verdict, pub output_digest: String }
 
 #[rustfmt::skip]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

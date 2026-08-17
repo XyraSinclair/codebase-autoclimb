@@ -19,6 +19,8 @@ pub const DECISION_ANSWERED: &str = "decision_answered";
 pub const RULESET_RATIFIED: &str = "ruleset_ratified";
 pub const CHANGE_PLANNED: &str = "change_planned";
 pub const CHANGE_STATUS: &str = "change_status";
+pub const LANE_OPENED: &str = "lane_opened";
+pub const LANE_CLOSED: &str = "lane_closed";
 pub const ATTEMPT_LOGGED: &str = "attempt_logged";
 pub const VERIFICATION_RECORDED: &str = "verification_recorded";
 const SCHEMA: u32 = 1;
@@ -42,12 +44,31 @@ pub struct DecisionAnswer { pub decision_id: String, pub chosen: String, pub raw
 
 #[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChangeStatusEvent { pub change_id: String, pub status: ChangeStatus }
+#[serde(deny_unknown_fields)]
+pub struct ChangeStatusEvent { pub change_id: String, pub status: ChangeStatus, #[serde(default, skip_serializing_if = "Option::is_none")] pub reason: Option<String> }
 
 #[rustfmt::skip]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaneOpened { pub change_id: String, pub lane_path: String, pub base_head: String, pub base_tree: String }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LaneOutcome {
+    Removed,
+    Retained,
+}
+
+#[rustfmt::skip]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaneClosed { pub change_id: String, pub lane_path: String, pub outcome: LaneOutcome, pub reason: String }
+
+#[rustfmt::skip]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AttemptLogged {
-    pub backend: String, pub brief_hash: String, pub budget: Budget,
+    pub change_id: String, pub backend: String, pub brief_hash: String, pub budget: Budget,
     pub started_at: DateTime<Utc>, pub ended_at: DateTime<Utc>, pub exit: String,
     pub transcript_hash: String,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub produced_tree: Option<String>,
@@ -145,6 +166,8 @@ pub struct Projection {
     pub snapshots: BTreeMap<String, Snapshot>, pub facts: BTreeMap<String, Fact>,
     pub decisions: BTreeMap<String, Decision>, pub ruleset: Option<(RuleSet, String)>,
     pub changes: BTreeMap<String, Change>, pub verifications: BTreeMap<String, Verification>,
+    pub active_lanes: BTreeMap<String, LaneOpened>, pub retained_lanes: BTreeMap<String, LaneClosed>,
+    pub attempts: BTreeMap<String, Vec<AttemptLogged>>,
     repo_id: Option<String>,
 }
 
@@ -247,61 +270,11 @@ impl Projection {
                 }
                 self.ruleset = Some((ruleset, hash));
             }
-            CHANGE_PLANNED => {
-                let change: Change = decode(event)?;
-                if change.status != ChangeStatus::Planned {
-                    return fail(seq, "change_planned payload is not planned");
-                }
-                self.check_snapshot(seq, &change.base)?;
-                if self.ruleset.as_ref().map(|(_, hash)| hash) != Some(&change.lineage) {
-                    return fail(seq, "change lineage is not the latest ratified ruleset");
-                }
-                for fact in &change.predicted {
-                    self.check_fact(seq, fact)?;
-                }
-                if let Some(prior) = self.changes.get(&change.id) {
-                    if prior.base != change.base
-                        || prior.brief_hash != change.brief_hash
-                        || prior.write_set != change.write_set
-                        || prior.risk_class != change.risk_class
-                    {
-                        return fail(
-                            seq,
-                            "re-planning changed base, brief_hash, write_set, or risk_class",
-                        );
-                    }
-                    return fail(seq, "change id was already planned");
-                }
-                self.changes.insert(change.id.clone(), change);
-            }
-            CHANGE_STATUS => {
-                let update: ChangeStatusEvent = decode(event)?;
-                let change = self
-                    .changes
-                    .get_mut(&update.change_id)
-                    .ok_or_else(|| error(seq, "status names an unknown change"))?;
-                if !matches!(
-                    (change.status, update.status),
-                    (ChangeStatus::Planned, ChangeStatus::Lane)
-                        | (ChangeStatus::Lane, ChangeStatus::Verifying)
-                        | (
-                            ChangeStatus::Verifying,
-                            ChangeStatus::Verified | ChangeStatus::Discarded
-                        )
-                ) {
-                    return fail(
-                        seq,
-                        format!(
-                            "illegal change transition {:?} -> {:?}",
-                            change.status, update.status
-                        ),
-                    );
-                }
-                change.status = update.status;
-            }
-            ATTEMPT_LOGGED => {
-                let _: AttemptLogged = decode(event)?;
-            }
+            CHANGE_PLANNED => self.plan_change(seq, decode(event)?)?,
+            CHANGE_STATUS => self.update_change(seq, decode(event)?)?,
+            LANE_OPENED => self.open_lane(seq, decode(event)?)?,
+            LANE_CLOSED => self.close_lane(seq, decode(event)?)?,
+            ATTEMPT_LOGGED => self.log_attempt(seq, decode(event)?)?,
             VERIFICATION_RECORDED => {
                 let verification: Verification = decode(event)?;
                 let change = self
@@ -332,6 +305,68 @@ impl Projection {
             }
             kind => return fail(seq, format!("unknown kind {kind}")),
         }
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    fn plan_change(&mut self, seq: u64, change: Change) -> Result<(), LedgerError> {
+        if change.status != ChangeStatus::Planned { return fail(seq, "change_planned payload is not planned"); }
+        if digest(change.brief.as_bytes()) != change.brief_hash { return fail(seq, "change brief does not match brief_hash"); }
+        self.check_snapshot(seq, &change.base)?;
+        if self.ruleset.as_ref().map(|(_, hash)| hash) != Some(&change.lineage) { return fail(seq, "change lineage is not the latest ratified ruleset"); }
+        for fact in &change.predicted { self.check_fact(seq, fact)?; }
+        if self.changes.contains_key(&change.id) { return fail(seq, "change id was already planned"); }
+        self.changes.insert(change.id.clone(), change);
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    fn update_change(&mut self, seq: u64, update: ChangeStatusEvent) -> Result<(), LedgerError> {
+        match (update.status, update.reason.as_deref()) {
+            (ChangeStatus::Discarded, Some(reason)) if !reason.is_empty() => {}
+            (ChangeStatus::Discarded, _) => return fail(seq, "discarded change status requires a reason"),
+            (_, None) => {}
+            (_, Some(_)) => return fail(seq, "non-discarded change status cannot carry a reason"),
+        }
+        let change = self.changes.get_mut(&update.change_id).ok_or_else(|| error(seq, "status names an unknown change"))?;
+        if !matches!((change.status, update.status),
+            (ChangeStatus::Planned, ChangeStatus::Lane | ChangeStatus::Discarded)
+            | (ChangeStatus::Lane, ChangeStatus::Verifying | ChangeStatus::Discarded)
+            | (ChangeStatus::Verifying, ChangeStatus::Verified | ChangeStatus::Discarded)) {
+            return fail(seq, format!("illegal change transition {:?} -> {:?}", change.status, update.status));
+        }
+        change.status = update.status;
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    fn open_lane(&mut self, seq: u64, opened: LaneOpened) -> Result<(), LedgerError> {
+        let change = self.changes.get(&opened.change_id).ok_or_else(|| error(seq, "lane names an unknown change"))?;
+        if change.status != ChangeStatus::Planned { return fail(seq, "lane was opened outside Planned"); }
+        if opened.lane_path.is_empty() || opened.base_head != change.base.head || opened.base_tree != change.base.tree { return fail(seq, "lane identity differs from the change base"); }
+        if !self.active_lanes.is_empty() { return fail(seq, "cannot open a second lane while WIP=1"); }
+        if self.retained_lanes.contains_key(&opened.change_id) { return fail(seq, "cannot reopen a retained lane"); }
+        self.active_lanes.insert(opened.change_id.clone(), opened);
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    fn close_lane(&mut self, seq: u64, closed: LaneClosed) -> Result<(), LedgerError> {
+        if closed.reason.is_empty() { return fail(seq, "lane_closed requires a reason"); }
+        if let Some(opened) = self.active_lanes.remove(&closed.change_id) {
+            if opened.lane_path != closed.lane_path { return fail(seq, "lane_closed path differs from lane_opened"); }
+            if closed.outcome == LaneOutcome::Retained { self.retained_lanes.insert(closed.change_id.clone(), closed); }
+        } else if closed.outcome == LaneOutcome::Removed {
+            let retained = self.retained_lanes.remove(&closed.change_id).ok_or_else(|| error(seq, "lane_closed names no open or retained lane"))?;
+            if retained.lane_path != closed.lane_path { return fail(seq, "removed lane path differs from retained lane"); }
+        } else { return fail(seq, "lane_closed names no open lane"); }
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    fn log_attempt(&mut self, seq: u64, attempt: AttemptLogged) -> Result<(), LedgerError> {
+        if !self.changes.contains_key(&attempt.change_id) { return fail(seq, "attempt names an unknown change"); }
+        self.attempts.entry(attempt.change_id.clone()).or_default().push(attempt);
         Ok(())
     }
 

@@ -85,11 +85,12 @@ Decision     { id, gates: [Branch], evidence: [FactId], why_not_inferable,
 RuleSet      { purpose, non_goals, allowed_paths, protected_paths,
                compatibility, verifier_commands, risk_ceiling: R0..R5,
                budget: {attempts, wall_secs, subprocesses}, hash }
-Change       { id, thesis, lineage: RuleSetRef, base: Snapshot, brief_hash,
+Change       { id, thesis, lineage: RuleSetRef, base: Snapshot, brief, brief_hash,
                write_set: [PathGlob], risk_class: R0..R5,
                predicted: [Fact], status: Planned|Lane|Verifying|Verified|Discarded }
 Verification { change, base_tree, result_tree, patch_hash, ruleset_hash,
-               levels_run: [(Level, Verdict, output_digest)],
+               levels_run: [{command, verdict: Passed|Failed|Inconclusive,
+                              output_digest}],
                behaviour_changed, behaviour_preserved,
                residual_uncertainty, realized: [Fact], rollback }
 ```
@@ -103,9 +104,9 @@ Notes that carry the conscientiousness:
   Unknowns stay visible; they are never converted into confidence.
 - The word is **verification**, not proof. Builds and tests reduce
   uncertainty; they do not prove semantic preservation.
-- Every agent invocation is logged as an `Attempt` event (backend, brief
-  hash, budget, exit, transcript hash, produced tree) without becoming a
-  projected entity.
+- Every agent invocation is logged as an `Attempt` event (change id, backend,
+  brief hash, budget, exit, transcript hash, produced tree), projected only as
+  per-change history rather than a seventh top-level IR object.
 
 Deferred until the loop demands them: Campaign (a DAG over Changes),
 Observation (post-merge monitoring), the protocol DSL, quality-vector
@@ -127,7 +128,7 @@ database. The loader enforces, failing closed:
    origin still says `desloppify.git`).
 4. Every event names an exact Snapshot whose objects exist locally.
 5. Exhaustive legal state transitions; immutable fields stay immutable
-   (change base, brief hash, write set, risk class, decision branches).
+   (change base, brief, brief hash, write set, risk class, decision branches).
 6. Agent processes never write the ledger; the orchestrator is the single
    writer.
 7. Unknown event kinds fail closed.

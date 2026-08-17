@@ -76,6 +76,9 @@ impl Lane {
         })
     }
 
+    #[rustfmt::skip]
+    pub fn recorded(repo: &Path, path: PathBuf, base_head: String, base_tree: String) -> Self { Self { path, base_head, base_tree, repo: repo.to_owned() } }
+
     pub fn diff_paths(&self) -> Result<Vec<String>, LaneError> {
         status_paths(&self.path)
     }
@@ -123,7 +126,10 @@ impl Lane {
     }
 
     pub fn patch(&self) -> Result<String, LaneError> {
-        git(&self.path, &["diff", &self.base_head])
+        self.diff_tree(&[])
+    }
+    pub fn patch_stat(&self) -> Result<String, LaneError> {
+        self.diff_tree(&["--stat"])
     }
 
     pub fn patch_sha256(&self) -> Result<String, LaneError> {
@@ -156,6 +162,9 @@ impl Lane {
         git(&self.repo, &["worktree", "prune"])?;
         Ok(())
     }
+
+    #[rustfmt::skip]
+    fn diff_tree(&self, options: &[&str]) -> Result<String, LaneError> { let result_tree = self.result_tree()?; let mut args = vec!["diff"]; args.extend_from_slice(options); args.extend([self.base_tree.as_str(), result_tree.as_str()]); git(&self.path, &args) }
 }
 
 fn globs(patterns: &[String]) -> Result<GlobSet, LaneViolation> {
@@ -171,7 +180,11 @@ fn globs(patterns: &[String]) -> Result<GlobSet, LaneViolation> {
 }
 
 fn status_paths(repo: &Path) -> Result<Vec<String>, LaneError> {
-    let bytes = run(repo, &["status", "--porcelain", "-z"], None)?;
+    let bytes = run(
+        repo,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+        None,
+    )?;
     let mut fields = bytes
         .split(|byte| *byte == 0)
         .filter(|field| !field.is_empty());
