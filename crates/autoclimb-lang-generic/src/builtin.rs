@@ -333,6 +333,46 @@ pub fn zig_config() -> GenericLangConfig {
     }
 }
 
+pub fn solidity_config() -> GenericLangConfig {
+    GenericLangConfig {
+        name: "solidity".into(),
+        extensions: vec!["sol".into()],
+        detect_markers: vec![
+            "foundry.toml".into(),
+            "hardhat.config.js".into(),
+            "hardhat.config.ts".into(),
+            "truffle-config.js".into(),
+        ],
+        exclude_patterns: vec![
+            "lib/".into(),
+            "out/".into(),
+            "cache/".into(),
+            "artifacts/".into(),
+            "broadcast/".into(),
+            "typechain-types/".into(),
+            "node_modules/".into(),
+        ],
+        tools: vec![],
+        treesitter_lang: None,
+        depth: PluginDepth::Shallow,
+        zone_rules: vec![
+            standard_test_zone_rule(),
+            ZoneRule {
+                zone: Zone::Test,
+                patterns: vec![".t.sol".into(), "test/".into()],
+            },
+            ZoneRule {
+                zone: Zone::Script,
+                patterns: vec![".s.sol".into(), "script/".into()],
+            },
+        ],
+        entry_patterns: vec![],
+        barrel_names: BTreeSet::new(),
+        large_threshold: 400,
+        complexity_threshold: 20,
+    }
+}
+
 pub fn powershell_config() -> GenericLangConfig {
     GenericLangConfig {
         name: "powershell".into(),
@@ -620,6 +660,7 @@ pub fn all_builtin_configs() -> Vec<GenericLangConfig> {
         ocaml_config(),
         nim_config(),
         zig_config(),
+        solidity_config(),
         powershell_config(),
         r_config(),
         gdscript_config(),

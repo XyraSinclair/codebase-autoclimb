@@ -227,7 +227,8 @@ fn render_questions(items: &[Candidate]) -> String {
 #[rustfmt::skip]
 fn run_cartographer(root: &Path, backend: &str, brief: &str) -> Result<String> {
     if backend != "codex" { return Err(format!("unsupported backend `{backend}`").into()); }
-    let output = Command::new("codex").args(["exec", "-s", "read-only", "--ephemeral", "-C"]).arg(root).arg(brief).stdin(Stdio::null()).output()?;
+    let codex_bin = std::env::var("AUTOCLIMB_CODEX_BIN").unwrap_or_else(|_| "codex".to_string());
+    let output = Command::new(codex_bin).args(["exec", "-s", "read-only", "--ephemeral", "-C"]).arg(root).arg(brief).stdin(Stdio::null()).output()?;
     if !output.status.success() { return Err(format!("codex failed: {}", String::from_utf8_lossy(&output.stderr).trim()).into()); }
     Ok(String::from_utf8(output.stdout)?)
 }
